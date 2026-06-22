@@ -1,0 +1,45 @@
+# postgres, app
+
+services:
+  app:
+    build: .
+    container_name: exchange-app
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  
+  postgres:
+    image: postgres:16-alpine
+    container_name: exchange-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-exchange}
+      POSTGRES_USER: ${POSTGRES_USER:-exchange_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-exchange_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-exchange_user} -d ${POSTGRES_DB:-exchange}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  
+  localstack:
+    image: localstack/localstack:3
+    container_name: exchange-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,sqs,sns,kinesis,dynamodb,secretsmanager,logs,iam,sts
+
+volumes:
+  postgres_data:
