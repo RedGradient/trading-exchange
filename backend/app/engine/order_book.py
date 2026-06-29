@@ -1,7 +1,15 @@
+from typing import TypedDict
+
 from sortedcontainers import SortedDict
 from collections import deque
 from decimal import Decimal
 from app.engine.models import Order, Side, OrderStatus
+
+
+class OrderBookSnapshot(TypedDict):
+    asks: list[tuple[Decimal, Decimal]]
+    bids: list[tuple[Decimal, Decimal]]
+
 
 class OrderBook:
     def __init__(self):
@@ -16,9 +24,9 @@ class OrderBook:
             self._asks.setdefault(order.price, deque()).append(order) # type: ignore
         self._index[order.id] = order
 
-    def cancel(self, order_id: int) -> bool:
+    def cancel(self, order_id: int) -> Order | None:
         if (order := self._index.get(order_id)) is None:
-            return False
+            return None
         assert order.price is not None, "Only limit orders rest in the book"
         if order.side == Side.BUY:
             self._bids[order.price].remove(order)
@@ -32,9 +40,9 @@ class OrderBook:
         del self._index[order.id]
         order.status = OrderStatus.CANCELLED
         
-        return True
+        return order
 
-    def snapshot(self, depth: int = 10) -> dict[str, list[tuple[Decimal, Decimal]]]:
+    def snapshot(self, depth: int = 10) -> OrderBookSnapshot:
         asks = []
         for price, level in self._asks.items():
             asks.append((price, sum(o.remaining for o in level)))

@@ -219,7 +219,9 @@ def test_cancel_resting_order() -> None:
     engine.place(cancelled)
     engine.place(kept)
 
-    assert engine.cancel(10) is True
+    result = engine.cancel(10)
+    assert result is not None
+    assert result is cancelled
     assert cancelled.status == OrderStatus.CANCELLED
 
     buy = make_order(order_id=12, side=Side.BUY, price="102", quantity="5")
@@ -232,7 +234,7 @@ def test_cancel_resting_order() -> None:
 
 def test_cancel_unknown_order() -> None:
     engine = empty_engine()
-    assert engine.cancel(999) is False
+    assert engine.cancel(999) is None
 
 
 def test_cancel_filled_order() -> None:
@@ -242,7 +244,7 @@ def test_cancel_filled_order() -> None:
     buy = make_order(order_id=2, side=Side.BUY, price="100", quantity="1")
     engine.place(buy)
 
-    assert engine.cancel(1) is False
+    assert engine.cancel(1) is None
 
 
 def test_deterministic_matching() -> None:

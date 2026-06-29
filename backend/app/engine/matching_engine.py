@@ -2,7 +2,7 @@ from collections.abc import Callable
 from typing import List
 
 from app.engine.models import Order, Side, OrderType, Trade, OrderStatus
-from app.engine.order_book import OrderBook
+from app.engine.order_book import OrderBook, OrderBookSnapshot
 
 
 class SymbolMismatchError(ValueError):
@@ -72,7 +72,7 @@ class MatchingEngine:
 
         return []
 
-    def cancel(self, order_id: int) -> bool:
+    def cancel(self, order_id: int) -> Order | None:
         """
         Cancel a resting order by id.
 
@@ -83,6 +83,9 @@ class MatchingEngine:
             bool: True if the order was found and cancelled; False otherwise.
         """
         return self._order_book.cancel(order_id)
+    
+    def snapshot(self, depth: int) -> OrderBookSnapshot:
+        return self._order_book.snapshot(depth)
 
     def _match_loop(
         self,

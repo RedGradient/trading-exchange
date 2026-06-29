@@ -1,4 +1,15 @@
+from collections.abc import AsyncGenerator
+
 import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import (
+    create_async_engine, 
+    async_sessionmaker, 
+    AsyncSession
+)
+
+from app.models.base import Base
+
 
 from helpers import (
     empty_engine, 
@@ -29,3 +40,14 @@ def filled_engine():
             ("95", "3"),
         ],
     )
+
+
+@pytest_asyncio.fixture
+async def db_session() -> AsyncGenerator[AsyncSession]:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessionmaker() as session:
+        yield session
+    await engine.dispose()

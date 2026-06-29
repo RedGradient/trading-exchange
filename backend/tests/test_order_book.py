@@ -43,7 +43,9 @@ def test_cancel_removes_buy_order(book: OrderBook) -> None:
     order = make_order(order_id=1, side=Side.BUY, price="99", quantity="3")
     book.add(order)
 
-    assert book.cancel(1) is True
+    result = book.cancel(1)
+    assert result is not None
+    assert result is order
     assert order.status == OrderStatus.CANCELLED
     assert book.peek_best_bid() is None
 
@@ -52,7 +54,9 @@ def test_cancel_removes_sell_order(book: OrderBook) -> None:
     order = make_order(order_id=1, side=Side.SELL, price="101", quantity="3")
     book.add(order)
 
-    assert book.cancel(1) is True
+    result = book.cancel(1)
+    assert result is not None
+    assert result is order
     assert order.status == OrderStatus.CANCELLED
     assert book.peek_best_ask() is None
 
@@ -68,8 +72,8 @@ def test_cancel_removes_empty_price_level(book: OrderBook) -> None:
     assert book.snapshot() == {"asks": [], "bids": []}
 
 
-def test_cancel_unknown_order_returns_false(book: OrderBook) -> None:
-    assert book.cancel(999) is False
+def test_cancel_unknown_order_returns_none(book: OrderBook) -> None:
+    assert book.cancel(999) is None
 
 
 def test_snapshot_aggregates_levels() -> None:
@@ -150,7 +154,7 @@ def test_pop_best_ask_removes_order_and_clears_level(book: OrderBook) -> None:
 
     assert popped is order
     assert book.peek_best_ask() is None
-    assert book.cancel(1) is False
+    assert book.cancel(1) is None
 
 
 def test_pop_best_ask_keeps_remaining_orders_at_level(book: OrderBook) -> None:
@@ -175,7 +179,7 @@ def test_pop_best_bid_removes_order_and_clears_level(book: OrderBook) -> None:
 
     assert popped is order
     assert book.peek_best_bid() is None
-    assert book.cancel(1) is False
+    assert book.cancel(1) is None
 
 
 def test_pop_best_bid_keeps_remaining_orders_at_level(book: OrderBook) -> None:

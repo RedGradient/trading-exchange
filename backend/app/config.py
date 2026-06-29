@@ -12,7 +12,12 @@ class Settings(BaseSettings):
     environment: str = "local"
     log_level: str = "INFO"
 
-    # Database
+    postgres_db: str = "exchange"
+    postgres_user: str = "exchange_user"
+    postgres_password: str = "exchange_pass"
+    postgres_host: str = "postgres"
+    postgres_port: int = 5432
+
     database_url: str = (
         "postgresql+psycopg://exchange_user:exchange_pass@postgres:5432/exchange"
     )
@@ -23,10 +28,20 @@ class Settings(BaseSettings):
     aws_access_key_id: str = "test"
     aws_secret_access_key: str = "test"
 
+    @property
+    def postgres_dsn(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+    
+    @property
+    def postgres_sync_dsn(self) -> str:
+        """Sync DSN for Alembic migrations (psycopg2)."""
+        return (
+            f"postgresql+psycopg2://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+        
 
-_settings: Settings | None = None
-def get_settings():
-    global _settings
-    if _settings is None:
-        _settings = Settings()
-    return _settings
+settings = Settings()
