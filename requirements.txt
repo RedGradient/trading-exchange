@@ -9,4 +9,4 @@ sortedcontainers==2.4.0
 
 # Database (async app runtime)
 sqlalchemy==2.0.36
-asyncpg==0.30.0
+asyncpg==0.31.0
