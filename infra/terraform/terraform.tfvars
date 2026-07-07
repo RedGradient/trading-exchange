@@ -1,0 +1,10 @@
+project_name               = "exchange"
+environment                = "local"
+aws_region                 = "us-east-1"
+localstack_endpoint        = "http://localhost:4566"
+trades_queue_name          = "trades"
+trades_dlq_name            = "trades-dlq"
+trades_settled_topic_name  = "trades-settled"
+visibility_timeout_seconds = 30
+message_retention_seconds  = 345600
+max_receive_count          = 3

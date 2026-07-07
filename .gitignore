@@ -18,7 +18,6 @@ htmlcov/
 infra/terraform/.terraform/
 infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*
-infra/terraform/.terraform.lock.hcl
 infra/terraform/crash.log
 
 # LocalStack
