@@ -1,10 +1,15 @@
+from typing import Any, List
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aws import get_aws_client
 from app.schemas.orders import OrderCreate
 from app.engine.models import Order as EngineOrder, OrderStatus
 from app.models.orders import Order as OrderORM
 from app.engine.registry import EngineRegistry
 from app.engine.order_book import OrderBookSnapshot
+from app.schemas.trades import TradeEvent
+from app.services.publish_service import publish_trade_events
 
 
 class OrderNotFoundException(Exception):
@@ -27,12 +32,17 @@ _TERMINAL_STATUSES = frozenset({
 
 
 class OrderService:
+    def __init__(self, sqs: Any | None = None) -> None:
+        self._sqs = sqs if sqs is not None else get_aws_client("sqs")
+
     async def place_order(
         self, 
         payload: OrderCreate,
         session: AsyncSession,
         registry: EngineRegistry
     ) -> OrderORM:
+        list_of_trades: List[TradeEvent] = []
+
         async with session.begin():
             # Creaete Order ORM
             order_orm = create_order_orm(payload)
@@ -66,6 +76,10 @@ class OrderService:
                     OrderStatus.FILLED if maker_orm.remaining == 0
                     else OrderStatus.PARTIALLY_FILLED
                 )
+
+                list_of_trades.append(TradeEvent.from_trade_dto(trade))
+
+        publish_trade_events(list_of_trades, self._sqs)
 
         return order_orm
 

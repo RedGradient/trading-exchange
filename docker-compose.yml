@@ -13,8 +13,25 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      localstack:
+        condition: service_healthy
     restart: unless-stopped
-  
+
+  settlement-worker:
+    build: .
+    container_name: exchange-settlement-worker
+    env_file:
+      - .env
+    command: ["python", "-m", "app.workers.settlement_worker"]
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     container_name: exchange-postgres
@@ -40,6 +57,12 @@ services:
       - "4566:4566"
     environment:
       - SERVICES=s3,sqs,sns,kinesis,dynamodb,secretsmanager,logs,iam,sts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
 volumes:
   postgres_data:

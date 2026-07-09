@@ -20,7 +20,7 @@ async def _dispose_engine() -> None:
         _engine = None
 
 
-def _get_sessionmaker():
+def get_sessionmaker():
     global _sessionmaker
     if _sessionmaker is None:
         _sessionmaker = async_sessionmaker(
@@ -34,7 +34,7 @@ def _dispose_sessionmaker() -> None:
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    sessionmaker = _get_sessionmaker()
+    sessionmaker = get_sessionmaker()
     async with sessionmaker() as session:
         try:
             yield session
