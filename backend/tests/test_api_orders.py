@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -8,9 +9,11 @@ from fastapi import status
 from httpx import ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.orders import get_order_service
 from app.engine.registry import EngineRegistry
 from app.main import app
 from app.models.users import User
+from app.services.order_service import OrderService
 from app.session import get_db_session
 
 
@@ -22,7 +25,11 @@ async def api_client(db_session: AsyncSession) -> AsyncGenerator[httpx.AsyncClie
     async def override_get_db_session() -> AsyncGenerator[AsyncSession]:
         yield db_session
 
+    async def override_get_order_service() -> AsyncGenerator[OrderService]:
+        yield OrderService(sqs=MagicMock())
+
     app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_order_service] = override_get_order_service
     app.state.registry = EngineRegistry()
 
     transport = ASGITransport(app=app)

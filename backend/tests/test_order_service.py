@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -21,7 +22,7 @@ from app.models.orders import Order
 async def test_place_order_resting_in_db(db_session: AsyncSession) -> None:
     db_session.add(User())
     await db_session.commit()
-    service = OrderService()
+    service = OrderService(sqs=MagicMock())
     registry = EngineRegistry()
 
     placed = await service.place_order(
@@ -49,7 +50,7 @@ async def test_place_order_resting_in_db(db_session: AsyncSession) -> None:
 async def test_place_order_maker_in_db(db_session: AsyncSession) -> None:
     db_session.add(User())
     await db_session.commit()
-    service = OrderService()
+    service = OrderService(sqs=MagicMock())
     registry = EngineRegistry()
 
     # 1) maker — sell 5 @ 100
@@ -100,7 +101,7 @@ async def test_place_order_maker_in_db(db_session: AsyncSession) -> None:
 async def test_cancel_order_ok(db_session: AsyncSession) -> None:
     db_session.add(User())
     await db_session.commit()
-    service = OrderService()
+    service = OrderService(sqs=MagicMock())
     registry = EngineRegistry()
 
     placed = await service.place_order(
@@ -125,7 +126,7 @@ async def test_cancel_order_ok(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_order_not_found(db_session: AsyncSession) -> None:
-    service = OrderService()
+    service = OrderService(sqs=MagicMock())
     registry = EngineRegistry()
 
     with pytest.raises(OrderNotFoundException):
@@ -138,7 +139,7 @@ async def test_cancel_order_not_cancellable_due_cancelled_status(
 ) -> None:
     db_session.add(User())
     await db_session.commit()
-    service = OrderService()
+    service = OrderService(sqs=MagicMock())
     registry = EngineRegistry()
 
     placed = await service.place_order(
@@ -168,7 +169,7 @@ async def test_cancel_order_not_cancellable_due_filled_status(
 ) -> None:
     db_session.add(User())
     await db_session.commit()
-    service = OrderService()
+    service = OrderService(sqs=MagicMock())
     registry = EngineRegistry()
 
     _maker = await service.place_order(

@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.aws import get_aws_client
 from app.engine.registry import EngineRegistry
 from app.schemas.orders import OrderBookSnapshotResponse, OrderCreate, OrderResponse
 from app.services.order_service import OrderService
@@ -27,6 +28,10 @@ _VALIDATION_ERROR = {
 
 def get_engine_registry(request: Request) -> EngineRegistry:
     return request.app.state.registry
+
+
+def get_order_service() -> OrderService:
+    return OrderService(sqs=get_aws_client("sqs"))
 
 
 @router.post(
@@ -55,10 +60,10 @@ def get_engine_registry(request: Request) -> EngineRegistry:
 )
 async def place_order(
     payload: OrderCreate,
+    service: OrderService = Depends(get_order_service),
     session: AsyncSession = Depends(get_db_session),
     registry: EngineRegistry = Depends(get_engine_registry),
 ) -> OrderResponse:
-    service = OrderService()
     order = await service.place_order(payload, session, registry)
     return OrderResponse.from_orm(order)
 
@@ -72,9 +77,9 @@ async def place_order(
 )
 async def get_order(
     order_id: Annotated[int, Path(description="Unique order identifier.", ge=1)],
+    service: OrderService = Depends(get_order_service),
     session: AsyncSession = Depends(get_db_session),
 ) -> OrderResponse:
-    service = OrderService()
     order = await service.get_order(order_id, session)
     return OrderResponse.from_orm(order)
 
@@ -99,10 +104,10 @@ async def get_order(
 )
 async def cancel_order(
     order_id: Annotated[int, Path(description="Unique order identifier.", ge=1)],
+    service: OrderService = Depends(get_order_service),
     session: AsyncSession = Depends(get_db_session),
     registry: EngineRegistry = Depends(get_engine_registry),
 ) -> OrderResponse:
-    service = OrderService()
     order = await service.cancel_order(order_id, session, registry)
     return OrderResponse.from_orm(order)
 
@@ -132,8 +137,8 @@ async def get_order_book(
         ),
     ] = 10,
     registry: EngineRegistry = Depends(get_engine_registry),
+    service: OrderService = Depends(get_order_service),
 ) -> OrderBookSnapshotResponse:
-    service = OrderService()
     book = await service.get_order_book(symbol, depth, registry)
     return OrderBookSnapshotResponse(
         symbol=symbol,
