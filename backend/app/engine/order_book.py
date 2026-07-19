@@ -19,9 +19,9 @@ class OrderBook:
 
     def add(self, order: Order) -> None:
         if order.side == Side.BUY:
-            self._bids.setdefault(order.price, deque()).append(order) # type: ignore
+            self._bids.setdefault(order.price, deque()).append(order)  # type: ignore
         elif order.side == Side.SELL:
-            self._asks.setdefault(order.price, deque()).append(order) # type: ignore
+            self._asks.setdefault(order.price, deque()).append(order)  # type: ignore
         self._index[order.id] = order
 
     def cancel(self, order_id: int) -> Order | None:
@@ -36,10 +36,10 @@ class OrderBook:
             self._asks[order.price].remove(order)
             if not self._asks[order.price]:
                 del self._asks[order.price]
-        
+
         del self._index[order.id]
         order.status = OrderStatus.CANCELLED
-        
+
         return order
 
     def snapshot(self, depth: int = 10) -> OrderBookSnapshot:
@@ -56,27 +56,24 @@ class OrderBook:
             if len(bids) == depth:
                 break
 
-        return {
-            "asks": asks,
-            "bids": bids
-        }
+        return {"asks": asks, "bids": bids}
 
     def peek_best_ask(self) -> Order | None:
         if not self._asks:
             return None
-        _, level = self._asks.peekitem(0) # type: ignore
+        _, level = self._asks.peekitem(0)  # type: ignore
         return level[0]
 
     def peek_best_bid(self) -> Order | None:
         if not self._bids:
             return None
-        _, level = self._bids.peekitem(-1) # type: ignore
+        _, level = self._bids.peekitem(-1)  # type: ignore
         return level[0]
 
     def pop_best_ask(self) -> Order | None:
         if not self._asks:
             return None
-        _, level = self._asks.peekitem(0) # type: ignore
+        _, level = self._asks.peekitem(0)  # type: ignore
 
         order_to_pop = level.popleft()
         if not level:
@@ -84,11 +81,11 @@ class OrderBook:
         del self._index[order_to_pop.id]
 
         return order_to_pop
-    
+
     def pop_best_bid(self) -> Order | None:
         if not self._bids:
             return None
-        _, level = self._bids.peekitem(-1) # type: ignore
+        _, level = self._bids.peekitem(-1)  # type: ignore
 
         order_to_pop = level.popleft()
         if not level:

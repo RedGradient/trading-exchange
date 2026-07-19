@@ -68,7 +68,7 @@ async def test_place_order_returns_created_order(api_client: httpx.AsyncClient) 
 async def test_place_order_validation_error(api_client: httpx.AsyncClient) -> None:
     response = await api_client.post(
         "/api/orders",
-        json=_limit_order_payload(price=None), # type: ignore
+        json=_limit_order_payload(price=None),  # type: ignore
     )
 
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -76,7 +76,9 @@ async def test_place_order_validation_error(api_client: httpx.AsyncClient) -> No
 
 @pytest.mark.asyncio
 async def test_get_order_returns_persisted_order(api_client: httpx.AsyncClient) -> None:
-    created = await api_client.post("/api/orders", json=_limit_order_payload(side="SELL"))
+    created = await api_client.post(
+        "/api/orders", json=_limit_order_payload(side="SELL")
+    )
     order_id = created.json()["id"]
 
     response = await api_client.get(f"/api/orders/{order_id}")
@@ -95,8 +97,12 @@ async def test_get_order_not_found(api_client: httpx.AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cancel_order_cancels_resting_order(api_client: httpx.AsyncClient) -> None:
-    created = await api_client.post("/api/orders", json=_limit_order_payload(side="SELL"))
+async def test_cancel_order_cancels_resting_order(
+    api_client: httpx.AsyncClient,
+) -> None:
+    created = await api_client.post(
+        "/api/orders", json=_limit_order_payload(side="SELL")
+    )
     order_id = created.json()["id"]
 
     response = await api_client.post(f"/api/orders/{order_id}/cancel")

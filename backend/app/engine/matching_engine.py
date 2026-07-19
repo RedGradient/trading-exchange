@@ -25,7 +25,7 @@ class MatchingEngine:
 
         Raises:
             SymbolMismatchError: if order.symbol does not match the engine.
-        
+
         Returns:
             list[Trade]: Trades done by this matching process. Empty if no matching occurred.
         """
@@ -36,7 +36,6 @@ class MatchingEngine:
         order.sequence = self._next_seq()
 
         if order.side == Side.BUY:
-
             match order.type:
                 case OrderType.LIMIT:
                     assert order.price is not None, "LIMIT order must have a price"
@@ -83,7 +82,7 @@ class MatchingEngine:
             bool: True if the order was found and cancelled; False otherwise.
         """
         return self._order_book.cancel(order_id)
-    
+
     def snapshot(self, depth: int) -> OrderBookSnapshot:
         return self._order_book.snapshot(depth)
 
@@ -106,7 +105,9 @@ class MatchingEngine:
             assert maker.price is not None
 
             if not is_market and not price_crosses(maker):
-                order.status = OrderStatus.PARTIALLY_FILLED if trades else OrderStatus.OPEN
+                order.status = (
+                    OrderStatus.PARTIALLY_FILLED if trades else OrderStatus.OPEN
+                )
                 self._order_book.add(order)
                 return trades
 
@@ -119,7 +120,9 @@ class MatchingEngine:
                     OrderStatus.PARTIALLY_FILLED if trades else OrderStatus.CANCELLED
                 )
             else:
-                order.status = OrderStatus.PARTIALLY_FILLED if trades else OrderStatus.OPEN
+                order.status = (
+                    OrderStatus.PARTIALLY_FILLED if trades else OrderStatus.OPEN
+                )
                 self._order_book.add(order)
         else:
             order.status = OrderStatus.FILLED

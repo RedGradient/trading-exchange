@@ -29,7 +29,9 @@ class Settings(BaseSettings):
     aws_secret_access_key: str = "test"
 
     trades_queue_url: str = "http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/exchange-local-trades"
-    trades_settled_topic_arn: str = "arn:aws:sns:us-east-1:000000000000:exchange-local-trades-settled"
+    trades_settled_topic_arn: str = (
+        "arn:aws:sns:us-east-1:000000000000:exchange-local-trades-settled"
+    )
     ws_fanout_queue_url: str = "http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/exchange-local-ws-fanout"
 
     @property
@@ -38,7 +40,7 @@ class Settings(BaseSettings):
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
-    
+
     @property
     def postgres_sync_dsn(self) -> str:
         """Sync DSN for Alembic migrations (psycopg2)."""
@@ -46,6 +48,6 @@ class Settings(BaseSettings):
             f"postgresql+psycopg2://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
-        
+
 
 settings = Settings()

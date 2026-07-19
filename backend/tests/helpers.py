@@ -43,8 +43,10 @@ def empty_engine(symbol: str = "BTC-USD") -> MatchingEngine:
 def filled_engine(
     *,
     symbol: str = "BTC-USD",
-    asks: list[tuple[Decimal | str | int | float, Decimal | str | int | float]] | None = None,
-    bids: list[tuple[Decimal | str | int | float, Decimal | str | int | float]] | None = None,
+    asks: list[tuple[Decimal | str | int | float, Decimal | str | int | float]]
+    | None = None,
+    bids: list[tuple[Decimal | str | int | float, Decimal | str | int | float]]
+    | None = None,
 ) -> MatchingEngine:
     """MatchingEngine with resting limit orders in the book.
 

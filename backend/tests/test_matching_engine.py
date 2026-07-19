@@ -102,8 +102,8 @@ def test_filled_engine_has_resting_orders() -> None:
 
     assert book.peek_best_ask() is not None
     assert book.peek_best_bid() is not None
-    assert book.peek_best_ask().price == Decimal("101") # type: ignore
-    assert book.peek_best_bid().price == Decimal("99") # type: ignore
+    assert book.peek_best_ask().price == Decimal("101")  # type: ignore
+    assert book.peek_best_bid().price == Decimal("99")  # type: ignore
 
 
 def test_symbol_mismatch_exception() -> None:
@@ -140,7 +140,7 @@ def test_limit_buy_price_does_not_cross() -> None:
     best_bid = engine._order_book.peek_best_bid()
     assert best_bid is not None
     assert best_bid.price == Decimal("100")
-    assert engine._order_book.peek_best_ask().price == Decimal("101") # type: ignore
+    assert engine._order_book.peek_best_ask().price == Decimal("101")  # type: ignore
 
 
 def test_limit_buy_partial_fill_taker_rests() -> None:

@@ -24,11 +24,13 @@ class OrderSyncError(Exception):
     """Engine state could not be synced to the database."""
 
 
-_TERMINAL_STATUSES = frozenset({
-    OrderStatus.CANCELLED,
-    OrderStatus.FILLED,
-    OrderStatus.REJECTED,
-})
+_TERMINAL_STATUSES = frozenset(
+    {
+        OrderStatus.CANCELLED,
+        OrderStatus.FILLED,
+        OrderStatus.REJECTED,
+    }
+)
 
 
 class OrderService:
@@ -36,10 +38,7 @@ class OrderService:
         self._sqs = sqs if sqs is not None else get_aws_client("sqs")
 
     async def place_order(
-        self, 
-        payload: OrderCreate,
-        session: AsyncSession,
-        registry: EngineRegistry
+        self, payload: OrderCreate, session: AsyncSession, registry: EngineRegistry
     ) -> OrderORM:
         list_of_trades: List[TradeEvent] = []
 
@@ -73,7 +72,8 @@ class OrderService:
                 # Update maker in database
                 maker_orm.remaining -= trade.quantity
                 maker_orm.status = (
-                    OrderStatus.FILLED if maker_orm.remaining == 0
+                    OrderStatus.FILLED
+                    if maker_orm.remaining == 0
                     else OrderStatus.PARTIALLY_FILLED
                 )
 
@@ -87,7 +87,7 @@ class OrderService:
         if (order := await session.get(OrderORM, order_id)) is None:
             raise OrderNotFoundException()
         return order
-    
+
     async def cancel_order(
         self,
         order_id: int,
@@ -108,20 +108,12 @@ class OrderService:
         await session.commit()
 
         return order_orm
-    
+
     async def get_order_book(
-        self,
-        symbol: str,
-        depth: int,
-        registry: EngineRegistry
+        self, symbol: str, depth: int, registry: EngineRegistry
     ) -> OrderBookSnapshot:
         engine = registry.get_engine(symbol)
         return engine.snapshot(depth)
-        
-
-
-
-            
 
 
 def create_order_orm(payload: OrderCreate) -> OrderORM:

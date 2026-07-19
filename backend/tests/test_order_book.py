@@ -63,7 +63,7 @@ def test_cancel_removes_sell_order(book: OrderBook) -> None:
 
 def test_cancel_removes_empty_price_level(book: OrderBook) -> None:
     """After canceling the last order at a price level, no empty deque should remain."""
-    
+
     order = make_order(order_id=1, side=Side.SELL, price="101", quantity="3")
     book.add(order)
 
@@ -88,7 +88,9 @@ def test_snapshot_aggregates_levels() -> None:
         ("107", "7"),
         ("108", "8"),
     ]:
-        book.add(make_order(order_id=int(price), side=Side.SELL, price=price, quantity=qty))
+        book.add(
+            make_order(order_id=int(price), side=Side.SELL, price=price, quantity=qty)
+        )
 
     for price, qty in [("99", "1"), ("98", "2"), ("97", "3"), ("96", "4")]:
         book.add(

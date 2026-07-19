@@ -7,9 +7,11 @@ class Side(StrEnum):
     BUY = "BUY"
     SELL = "SELL"
 
+
 class OrderType(StrEnum):
     LIMIT = "LIMIT"
     MARKET = "MARKET"
+
 
 class OrderStatus(StrEnum):
     OPEN = "OPEN"
@@ -17,6 +19,7 @@ class OrderStatus(StrEnum):
     FILLED = "FILLED"
     CANCELLED = "CANCELLED"
     REJECTED = "REJECTED"
+
 
 @dataclass
 class Order:
@@ -29,6 +32,7 @@ class Order:
     remaining: Decimal
     status: OrderStatus
     sequence: int
+
 
 @dataclass
 class Trade:

@@ -10,7 +10,9 @@ from app.models.orders import Order as OrderORM
 
 class OrderCreate(BaseModel):
     user_id: int = Field(description="Owner of the order. Must exist in the database.")
-    symbol: str = Field(description="Trading pair symbol, for example `BTC-USD`.", max_length=32)
+    symbol: str = Field(
+        description="Trading pair symbol, for example `BTC-USD`.", max_length=32
+    )
     side: Side = Field(description="Order side: `BUY` or `SELL`.")
     type: OrderType = Field(description="Order type: `LIMIT` or `MARKET`.")
     price: Decimal | None = Field(
@@ -56,7 +58,7 @@ class OrderResponse(BaseModel):
     created_at: datetime = Field(description="Timestamp when the order was created.")
 
     @classmethod
-    def from_orm(cls, order: OrderORM) -> Self: # type: ignore
+    def from_orm(cls, order: OrderORM) -> Self:  # type: ignore
         return cls(
             id=order.id,
             user_id=order.user_id,

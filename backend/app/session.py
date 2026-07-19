@@ -1,4 +1,9 @@
-from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    AsyncEngine,
+    async_sessionmaker,
+    create_async_engine,
+)
 from collections.abc import AsyncGenerator
 from app.config import settings
 
@@ -12,6 +17,7 @@ def _get_db_engine() -> AsyncEngine:
     if _engine is None:
         _engine = create_async_engine(settings.postgres_dsn, pool_pre_ping=True)
     return _engine
+
 
 async def _dispose_engine() -> None:
     global _engine
@@ -28,6 +34,7 @@ def get_sessionmaker():
         )
     return _sessionmaker
 
+
 def _dispose_sessionmaker() -> None:
     global _sessionmaker
     _sessionmaker = None
@@ -41,6 +48,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
 
 async def close_db() -> None:
     await _dispose_engine()

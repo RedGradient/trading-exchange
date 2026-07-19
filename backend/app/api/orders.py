@@ -68,7 +68,7 @@ async def place_order(
     response_model=OrderResponse,
     summary="Get order by id",
     description="Returns the current persisted state of a single order.",
-    responses=_ORDER_NOT_FOUND, # type: ignore
+    responses=_ORDER_NOT_FOUND,  # type: ignore
 )
 async def get_order(
     order_id: Annotated[int, Path(description="Unique order identifier.", ge=1)],
@@ -116,7 +116,7 @@ async def cancel_order(
         "Each level is a `(price, total_quantity)` pair. "
         "An empty book is returned if the symbol has not traded yet."
     ),
-    responses=_VALIDATION_ERROR, # type: ignore
+    responses=_VALIDATION_ERROR,  # type: ignore
 )
 async def get_order_book(
     symbol: Annotated[
