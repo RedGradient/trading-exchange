@@ -40,6 +40,12 @@ variable "trades_settled_topic_name" {
   default     = "trades-settled"
 }
 
+variable "ws_fanout_queue_name" {
+  description = "SQS queue name for WebSocket fan-out of settled trades."
+  type        = string
+  default     = "ws-fanout"
+}
+
 variable "visibility_timeout_seconds" {
   description = "How long a message stays invisible while a worker processes it."
   type        = number

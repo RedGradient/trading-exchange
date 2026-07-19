@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     trades_queue_url: str = "http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/exchange-local-trades"
     trades_settled_topic_arn: str = "arn:aws:sns:us-east-1:000000000000:exchange-local-trades-settled"
+    ws_fanout_queue_url: str = "http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/exchange-local-ws-fanout"
 
     @property
     def postgres_dsn(self) -> str:
