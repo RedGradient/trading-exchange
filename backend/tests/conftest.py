@@ -36,11 +36,18 @@ def filled_engine():
 
 
 @pytest_asyncio.fixture
-async def db_session() -> AsyncGenerator[AsyncSession]:
+async def db_sessionmaker() -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
-    async with sessionmaker() as session:
-        yield session
+    yield sessionmaker
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_session(
+    db_sessionmaker: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[AsyncSession]:
+    async with db_sessionmaker() as session:
+        yield session

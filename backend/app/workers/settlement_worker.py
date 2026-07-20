@@ -59,6 +59,30 @@ async def _process_message(
     await _delete_message(sqs, msg)
 
 
+async def handle_message(
+    msg: dict,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    sqs: Any,
+    sns: Any,
+) -> None:
+    """Process one SQS message and apply delete / retry policy."""
+    message_id = msg.get("MessageId")
+    try:
+        await _process_message(msg, sessionmaker, sqs, sns)
+    except (ValidationError, ValueError) as exc:
+        logger.warning(
+            "Invalid trade event (MessageId=%s), deleting: %s",
+            message_id,
+            exc,
+        )
+        await _delete_message(sqs, msg)
+    except Exception:
+        logger.exception(
+            "Failed to settle trade message (MessageId=%s)",
+            message_id,
+        )
+
+
 async def main() -> None:
     sqs = get_aws_client("sqs")
     sns = get_aws_client("sns")
@@ -70,21 +94,7 @@ async def main() -> None:
         response = await _receive_messages(sqs)
 
         for msg in response.get("Messages", []):
-            message_id = msg.get("MessageId")
-            try:
-                await _process_message(msg, sessionmaker, sqs, sns)
-            except (ValidationError, ValueError) as exc:
-                logger.warning(
-                    "Invalid trade event (MessageId=%s), deleting: %s",
-                    message_id,
-                    exc,
-                )
-                await _delete_message(sqs, msg)
-            except Exception:
-                logger.exception(
-                    "Failed to settle trade message (MessageId=%s)",
-                    message_id,
-                )
+            await handle_message(msg, sessionmaker, sqs, sns)
 
 
 if __name__ == "__main__":
