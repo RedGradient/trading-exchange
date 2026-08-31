@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import './App.css'
 import { OrderBook } from './components/OrderBook'
 import { OrderForm } from './components/OrderForm'
 import { TradesFeed } from './components/TradesFeed'
@@ -16,11 +17,15 @@ export default function App() {
 
   return (
     <main className="app">
-      <OrderForm onPlaced={refreshBook} />
+      <header className="app-header">
+        <h1>Trading Exchange</h1>
+        <p>{SYMBOL}</p>
+      </header>
 
-      <div className="market-grid">
+      <div className="layout-grid">
         <OrderBook symbol={SYMBOL} refreshKey={refreshKey} />
         <TradesFeed trades={trades} status={status} />
+        <OrderForm onPlaced={refreshBook} />
       </div>
     </main>
   )

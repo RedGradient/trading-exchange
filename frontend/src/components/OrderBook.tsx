@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import type { OrderBookSnapshot } from "../types/api"
 import { getOrderBook } from "../api/client"
+import { formatDecimal } from "../utils/format"
 
 type OrderBookProps = {
     symbol: string
@@ -33,44 +34,69 @@ export function OrderBook({ symbol, refreshKey = 0}: OrderBookProps) {
     }, [symbol, refreshKey])
 
     if (error) {
-        return <div className="order-book error">{error}</div>
+        return <div className="order-book panel error">{error}</div>
     }
 
     if (!book) {
-        return <div className="order-book">Loading…</div>
+        return <div className="order-book panel loading">Loading…</div>
     }
 
+    const askLevels = [...book.asks].reverse()
+    const isEmpty = book.asks.length === 0 && book.bids.length === 0
+
     return (
-        <section className="order-book">
-        <h2>Order book · {book.symbol}</h2>
-        <div className="order-book-columns">
-            <div className="asks">
-            <h3>Asks</h3>
-            <ul>
-                {book.asks.length === 0 && <li>Empty</li>}
-                {book.asks.map(([price, quantity]) => (
-                <li key={`ask-${price}`}>
-                    <span>{price}</span>
-                    <span> · </span>
-                    <span>{quantity}</span>
-                </li>
-                ))}
-            </ul>
+        <section className="order-book panel">
+            <h2>Order book</h2>
+            <div className="order-book-table">
+                <div className="order-book-header">
+                    <span>Price</span>
+                    <span>Size</span>
+                </div>
+
+                {isEmpty ? (
+                    <div className="order-book-body">
+                        <div className="order-book-row order-book-row--empty">
+                            <span>Empty</span>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="order-book-body">
+                        <div className="order-book-spacer" aria-hidden="true" />
+                        <div className="order-book-asks">
+                            {askLevels.map(([price, quantity], index) => {
+                                const isBestAsk = index === askLevels.length - 1
+                                return (
+                                    <div
+                                        className={`order-book-row order-book-row--ask${
+                                            book.bids.length > 0 && isBestAsk
+                                                ? ' order-book-row--spread'
+                                                : ''
+                                        }${isBestAsk ? ' order-book-row--best-ask' : ''}`}
+                                        key={`ask-${price}`}
+                                    >
+                                        <span>{formatDecimal(price)}</span>
+                                        <span>{quantity}</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                        <div className="order-book-bids">
+                            {book.bids.map(([price, quantity], index) => (
+                                <div
+                                    className={`order-book-row order-book-row--bid${
+                                        index === 0 ? ' order-book-row--best-bid' : ''
+                                    }`}
+                                    key={`bid-${price}`}
+                                >
+                                    <span>{formatDecimal(price)}</span>
+                                    <span>{quantity}</span>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="order-book-spacer" aria-hidden="true" />
+                    </div>
+                )}
             </div>
-            <div className="bids">
-            <h3>Bids</h3>
-            <ul>
-                {book.bids.length === 0 && <li>Empty</li>}
-                {book.bids.map(([price, quantity]) => (
-                <li key={`bid-${price}`}>
-                    <span>{price}</span>
-                    <span> · </span>
-                    <span>{quantity}</span>
-                </li>
-                ))}
-            </ul>
-            </div>
-        </div>
         </section>
     )
 }
