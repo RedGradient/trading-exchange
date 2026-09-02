@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -18,7 +18,7 @@ class WsMessage(BaseModel):
 class WsError(BaseModel):
     """Error response sent to the client when a request cannot be processed."""
 
-    type: Literal["error"] = "error"
+    type: str
     id: str | None = Field(
         default=None,
         description=(
