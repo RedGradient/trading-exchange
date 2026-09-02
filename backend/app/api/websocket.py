@@ -102,11 +102,11 @@ async def order_place_handler(websocket: WebSocket, request: WsMessage) -> None:
     async with get_sessionmaker()() as session:
         order = await service.place_order(payload, session, registry)
 
-    response = OrderResponse.from_orm(order)
+    response_payload = OrderResponse.from_orm(order)
     await websocket.send_json(
         WsMessage(
             type=ORDER_PLACED_MESSAGE_TYPE,
             id=request.id,
-            payload=response.model_dump(mode="json"),
+            payload=response_payload.model_dump(mode="json"),
         ).model_dump(mode="json")
     )
