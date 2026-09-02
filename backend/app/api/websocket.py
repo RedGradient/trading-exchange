@@ -17,8 +17,10 @@ from app.session import get_sessionmaker
 
 ws_router = APIRouter(tags=["websocket"])
 
-ORDER_PLACE_REQUEST_TYPE: str = "order.place"
-ORDER_PLACED_REQUEST_TYPE: str = "order.placed"
+ORDER_PLACE_MESSAGE_TYPE: str = "order.place"
+ORDER_PLACED_MESSAGE_TYPE: str = "order.placed"
+ERROR_MESSAGE_TYPE: str = "error"
+
 
 WS_EXCEPTION_MAPPING: dict[type[Exception], tuple[str, Any]] = {
     ValidationError: ("validation_error", lambda exc: exc.errors()),
@@ -48,7 +50,7 @@ async def handle_message(websocket: WebSocket, message_raw: str) -> None:
         request = WsMessage.model_validate(message)
         request_id = request.id
 
-        if request.type == ORDER_PLACE_REQUEST_TYPE:
+        if request.type == ORDER_PLACE_MESSAGE_TYPE:
             await order_place_handler(websocket, request)
 
     except Exception as exc:
@@ -65,7 +67,7 @@ async def send_error(
         if isinstance(exception, exc_type):
             await websocket.send_json(
                 WsError(
-                    type="error",
+                    type=ERROR_MESSAGE_TYPE,
                     id=request_id,
                     code=exc_code,
                     detail=detail_fn(exception),
@@ -85,7 +87,7 @@ async def order_place_handler(websocket: WebSocket, request: WsMessage) -> None:
     response = OrderResponse.from_orm(order)
     await websocket.send_json(
         WsMessage(
-            type=ORDER_PLACED_REQUEST_TYPE,
+            type=ORDER_PLACED_MESSAGE_TYPE,
             id=request.id,
             payload=response.model_dump(mode="json"),
         ).model_dump(mode="json")
