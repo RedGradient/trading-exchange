@@ -23,6 +23,7 @@ ERROR_MESSAGE_TYPE: str = "error"
 
 
 WS_EXCEPTION_MAPPING: dict[type[Exception], tuple[str, Any]] = {
+    json.JSONDecodeError: ("invalid_json", lambda exc: str(exc)),
     ValidationError: ("validation_error", lambda exc: exc.errors()),
     order_service.OrderSyncError: ("engine_error", lambda exc: str(exc)),
     IntegrityError: ("constraint_error", lambda exc: "Database constraint violated"),
