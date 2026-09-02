@@ -1,6 +1,7 @@
 """WebSocket endpoint for market data and order commands."""
 
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -14,6 +15,8 @@ from app.services import order_service
 from app.services.order_service import OrderService
 from app.services.ws_manager import ws_manager
 from app.session import get_sessionmaker
+
+logger = logging.getLogger(__name__)
 
 ws_router = APIRouter(tags=["websocket"])
 
@@ -75,6 +78,20 @@ async def send_error(
                 ).model_dump(mode="json")
             )
             return
+
+    logger.error(
+        "Unhandled WebSocket exception (request_id=%s)",
+        request_id,
+        exc_info=exception,
+    )
+    await websocket.send_json(
+        WsError(
+            type=ERROR_MESSAGE_TYPE,
+            id=request_id,
+            code="internal_error",
+            detail="Unexpected server error",
+        ).model_dump(mode="json")
+    )
 
 
 async def order_place_handler(websocket: WebSocket, request: WsMessage) -> None:
