@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from app.aws import get_aws_client
 from app.config import settings
+from app.schemas.order_book import OrderBookSnapshotEvent
 from app.schemas.trades import TradeSettledEvent
 
 logger = logging.getLogger(__name__)
@@ -51,20 +52,44 @@ def receive_from_ws_fanout_queue(sqs: Any) -> list[dict]:
     return response.get("Messages", [])
 
 
-def parse_trade_settled(msg: dict) -> dict:
-    """Parse SQS message body into a TradeSettledEvent payload dict.
+def _extract_event_from_sqs_message(msg: dict) -> dict:
+    """Extract an event dict from an SQS message, unwrapping SNS if present."""
 
-    SNS→SQS delivery wraps the original JSON in an envelope with a Message field.
-    """
     body = json.loads(msg["Body"])
-    if isinstance(body, dict) and "Message" in body:
-        raw_event = body["Message"]
-        payload = json.loads(raw_event) if isinstance(raw_event, str) else raw_event
-    else:
-        payload = body
+    if not isinstance(body, dict):
+        raise ValueError("Message body must be a JSON object")
 
-    event = TradeSettledEvent.model_validate(payload)
-    return event.model_dump(mode="json")
+    # SNS wraps the original event JSON in the "Message" field
+    if "Message" in body:
+        message = body["Message"]
+        if not isinstance(message, str):
+            raise ValueError("Message must be a string")
+
+        body = json.loads(message)
+        if not isinstance(body, dict):
+            raise ValueError("Event payload must be a JSON object")
+
+    return body
+
+
+def parse_message(msg: dict) -> tuple[dict[str, Any], str]:
+    """Validate an event and return its payload and WebSocket message type."""
+
+    event = _extract_event_from_sqs_message(msg)
+    if not (event_type := event.get("event_type")):
+        raise ValueError("Unexpected type of message")
+
+    if event_type == "trade.settled":
+        event = TradeSettledEvent.model_validate(event)
+    elif event_type == "order_book.snapshot":
+        event = OrderBookSnapshotEvent.model_validate(event)
+    else:
+        raise ValueError("Unexpected type of message")
+
+    return (
+        event.model_dump(mode="json", exclude={"event_type"}),
+        event_type
+    )
 
 
 def delete_message(sqs: Any, msg: dict) -> None:
@@ -86,10 +111,10 @@ async def ws_fanout_loop() -> None:
             messages = await asyncio.to_thread(receive_from_ws_fanout_queue, sqs)
             for msg in messages:
                 try:
-                    payload = parse_trade_settled(msg)
+                    payload, ws_msg_type = parse_message(msg)
                     await ws_manager.broadcast_json(
                         {
-                            "type": "trade.settled",
+                            "type": ws_msg_type,
                             "payload": payload,
                         }
                     )

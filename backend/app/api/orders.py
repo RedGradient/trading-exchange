@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aws import get_aws_client
 from app.engine.registry import EngineRegistry
-from app.schemas.orders import OrderBookSnapshotResponse, OrderCreate, OrderResponse
+from app.schemas.order_book import OrderBookSnapshotPayload
+from app.schemas.orders import OrderCreate, OrderResponse
 from app.services.order_service import OrderService
 from app.session import get_db_session
 
@@ -114,7 +115,7 @@ async def cancel_order(
 
 @router.get(
     "/order_book/{symbol}",
-    response_model=OrderBookSnapshotResponse,
+    response_model=OrderBookSnapshotPayload,
     summary="Get order book snapshot",
     description=(
         "Returns aggregated bid and ask levels for a trading symbol. "
@@ -138,9 +139,9 @@ async def get_order_book(
     ] = 10,
     registry: EngineRegistry = Depends(get_engine_registry),
     service: OrderService = Depends(get_order_service),
-) -> OrderBookSnapshotResponse:
+) -> OrderBookSnapshotPayload:
     book = await service.get_order_book(symbol, depth, registry)
-    return OrderBookSnapshotResponse(
+    return OrderBookSnapshotPayload(
         symbol=symbol,
         asks=book["asks"],
         bids=book["bids"],

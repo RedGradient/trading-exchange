@@ -72,13 +72,3 @@ class OrderResponse(BaseModel):
             sequence=order.sequence,
             created_at=order.created_at,
         )
-
-
-class OrderBookSnapshotResponse(BaseModel):
-    symbol: str = Field(description="Trading pair symbol.")
-    asks: list[tuple[Decimal, Decimal]] = Field(
-        description="Sell levels as `(price, total_quantity)` pairs, best ask first.",
-    )
-    bids: list[tuple[Decimal, Decimal]] = Field(
-        description="Buy levels as `(price, total_quantity)` pairs, best bid first.",
-    )

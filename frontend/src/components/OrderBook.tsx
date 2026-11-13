@@ -1,38 +1,12 @@
-import { useEffect, useState } from "react"
 import type { OrderBookSnapshot } from "../types/api"
-import { getOrderBook } from "../api/client"
 import { formatDecimal } from "../utils/format"
 
 type OrderBookProps = {
-    symbol: string
-    refreshKey?: number
+    book: OrderBookSnapshot | null
+    error: string | null
 }
 
-export function OrderBook({ symbol, refreshKey = 0}: OrderBookProps) {
-    const [book, setBook] = useState<OrderBookSnapshot | null>(null)
-    const [error, setError] = useState<string | null>(null)
-
-    useEffect(() => {
-        let cancelled = false
-
-        getOrderBook(symbol)
-            .then((data) => {
-                if (!cancelled) {
-                    setBook(data)
-                    setError(null)
-                }
-            })
-            .catch((err: unknown) => {
-                if (!cancelled) {
-                    setError(err instanceof Error ? err.message : 'Failed to load order book')
-                }
-            })
-        
-        return () => {
-            cancelled = true
-        }
-    }, [symbol, refreshKey])
-
+export function OrderBook({ book, error }: OrderBookProps) {
     if (error) {
         return <div className="order-book panel error">{error}</div>
     }

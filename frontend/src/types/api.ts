@@ -38,8 +38,12 @@ export type OrderBookSnapshot = {
     bids: [string, string][],
 }
 
+export type OrderBookSnapshotMessage = {
+    type: 'order_book.snapshot'
+    payload: OrderBookSnapshot
+}
+
 export type TradeSettledEvent = {
-  event_type: 'trade.settled'
   trade_id: number
   dedup: string
   symbol: string
@@ -55,4 +59,23 @@ export type TradeSettledEvent = {
 export type TradeSettledMessage = {
   type: 'trade.settled'
   payload: TradeSettledEvent
+}
+
+export type OrderPlaceMessage = {
+  type: 'order.place'
+  id: string
+  payload: OrderCreate
+}
+
+export type OrderPlacedMessage = {
+  type: 'order.placed'
+  id: string
+  payload: OrderResponse
+}
+
+export type WsErrorMessage = {
+  type: 'error'
+  id: string | null
+  code: string
+  detail: string
 }

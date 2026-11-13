@@ -9,5 +9,5 @@ A learning-grade trading exchange backend with simple UI.
 - [x] **Sprint 3** — REST API + database + migrations
 - [x] **Sprint 4** — Terraform + LocalStack resources
 - [x] **Sprint 5** — Asynchronous settlement worker
-- [ ] **Sprint 6** — Frontend + WebSocket real-time updates
+- [x] **Sprint 6** — Frontend + WebSocket real-time updates
 - [ ] **Sprint 7** — Polish: CI, load test, screenshots

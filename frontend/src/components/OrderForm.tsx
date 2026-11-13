@@ -1,6 +1,5 @@
 import { useState, type SubmitEvent } from 'react'
-import { placeOrder } from '../api/client'
-import type { OrderType, Side } from '../types/api'
+import type { OrderCreate, OrderResponse, OrderType, Side } from '../types/api'
 import { SYMBOL, USER_ID } from '../constants'
 
 const PRICE_STEP = 1
@@ -42,10 +41,11 @@ function handleNumericChange(value: string, setValue: (next: string) => void) {
 }
 
 type OrderFormProps = {
-  onPlaced: () => void
+  placeOrder: (order: OrderCreate) => Promise<OrderResponse>
+  connected: boolean
 }
 
-export function OrderForm({ onPlaced }: OrderFormProps) {
+export function OrderForm({ placeOrder, connected }: OrderFormProps) {
   const [side, setSide] = useState<Side>('BUY')
   const [type, setType] = useState<OrderType>('LIMIT')
   const [price, setPrice] = useState('100.00')
@@ -96,7 +96,6 @@ export function OrderForm({ onPlaced }: OrderFormProps) {
         price: type === 'LIMIT' ? formatPrice(parseNumber(price)) : undefined,
         quantity: formatQuantity(parseNumber(quantity)),
       })
-      onPlaced()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to place order')
     } finally {
@@ -189,8 +188,8 @@ export function OrderForm({ onPlaced }: OrderFormProps) {
           </div>
         </label>
 
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Submitting…' : 'Submit'}
+        <button type="submit" disabled={submitting || !connected}>
+          {submitting ? 'Submitting…' : connected ? 'Submit' : 'Connecting…'}
         </button>
       </form>
 
