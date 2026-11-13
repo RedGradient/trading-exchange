@@ -1,16 +1,34 @@
 import { useEffect, useState } from "react"
-import type { TradeSettledEvent } from "../types/api"
+import { getOrderBook } from "../api/client"
+import type { OrderBookSnapshot, OrderBookSnapshotMessage, TradeSettledEvent, TradeSettledMessage } from "../types/api"
 
 type WsStatus = 'connecting' | 'connected' | 'disconnected'
 
-export function useTradeSocket(onTrade?: () => void) {
+export function useTradeSocket(symbol: string) {
     const [trades, setTrades] = useState<TradeSettledEvent[]>([])
+    const [book, setBook] = useState<OrderBookSnapshot | null>(null)
+    const [bookError, setBookError] = useState<string | null>(null)
     const [status, setStatus] = useState<WsStatus>('connecting')
 
     useEffect(() => {
         let ws: WebSocket | null = null
         let reconnectTimer: number | undefined
         let unmounted = false
+
+        let bookRequest = 0
+
+        const loadBook = async () => {
+            const request = ++bookRequest
+            try {
+                const snapshot = await getOrderBook(symbol)
+                if (unmounted || request !== bookRequest) return
+                setBook(snapshot)
+                setBookError(null)
+            } catch (error: unknown) {
+                if (unmounted || request !== bookRequest) return
+                setBookError(error instanceof Error ? error.message : 'Failed to load order book')
+            }
+        }
 
         const connect = () => {
             if (unmounted) return
@@ -27,15 +45,21 @@ export function useTradeSocket(onTrade?: () => void) {
                     return
                 }
                 setStatus('connected')
+                void loadBook()
             }
 
             ws.onmessage = (event) => {
                 try {
-                    const message = JSON.parse(event.data)
+                    const message = JSON.parse(event.data) as TradeSettledMessage | OrderBookSnapshotMessage
+                    if (unmounted) return
 
                     if (message.type === 'trade.settled' && message.payload) {
                         setTrades((prev) => [message.payload, ...prev].slice(0, 50))
-                        onTrade?.()
+                    } else if (message.type === 'order_book.snapshot' && message.payload?.symbol === symbol) {
+                        // A live snapshot supersedes any pending HTTP response.
+                        bookRequest++
+                        setBook(message.payload)
+                        setBookError(null)
                     }
                 } catch {
                     // ignoring invalid messages
@@ -45,11 +69,13 @@ export function useTradeSocket(onTrade?: () => void) {
 
             ws.onclose = () => {
                 if (unmounted) return
+                bookRequest++
                 setStatus('disconnected')
                 reconnectTimer = window.setTimeout(connect, 2000)
             }
         }
 
+        void loadBook()
         connect()
 
         return () => {
@@ -62,7 +88,7 @@ export function useTradeSocket(onTrade?: () => void) {
                 }
             }
         }
-    }, [onTrade])
+    }, [symbol])
 
-    return { trades, status }
+    return { trades, status, book, bookError }
 }

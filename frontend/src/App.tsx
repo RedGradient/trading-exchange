@@ -1,4 +1,3 @@
-import { useCallback, useState } from 'react'
 import './App.css'
 import { OrderBook } from './components/OrderBook'
 import { OrderForm } from './components/OrderForm'
@@ -7,13 +6,7 @@ import { useTradeSocket } from './hooks/useTradeSocket'
 import { SYMBOL } from './constants'
 
 export default function App() {
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  const refreshBook = useCallback(() => {
-    setRefreshKey((k) => k + 1)
-  }, [])
-
-  const { trades, status } = useTradeSocket(refreshBook)
+  const { trades, status, book, bookError } = useTradeSocket(SYMBOL)
 
   return (
     <main className="app">
@@ -23,9 +16,9 @@ export default function App() {
       </header>
 
       <div className="layout-grid">
-        <OrderBook symbol={SYMBOL} refreshKey={refreshKey} />
+        <OrderBook book={book} error={bookError} />
         <TradesFeed trades={trades} status={status} />
-        <OrderForm onPlaced={refreshBook} />
+        <OrderForm />
       </div>
     </main>
   )

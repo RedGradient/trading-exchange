@@ -42,10 +42,10 @@ function handleNumericChange(value: string, setValue: (next: string) => void) {
 }
 
 type OrderFormProps = {
-  onPlaced: () => void
+  onPlaced?: () => void
 }
 
-export function OrderForm({ onPlaced }: OrderFormProps) {
+export function OrderForm({ onPlaced }: OrderFormProps = {}) {
   const [side, setSide] = useState<Side>('BUY')
   const [type, setType] = useState<OrderType>('LIMIT')
   const [price, setPrice] = useState('100.00')
@@ -96,7 +96,7 @@ export function OrderForm({ onPlaced }: OrderFormProps) {
         price: type === 'LIMIT' ? formatPrice(parseNumber(price)) : undefined,
         quantity: formatQuantity(parseNumber(quantity)),
       })
-      onPlaced()
+      onPlaced?.()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to place order')
     } finally {
