@@ -6,7 +6,7 @@ import { useTradeSocket } from './hooks/useTradeSocket'
 import { SYMBOL } from './constants'
 
 export default function App() {
-  const { trades, status, book, bookError } = useTradeSocket(SYMBOL)
+  const { trades, status, book, bookError, placeOrder } = useTradeSocket(SYMBOL)
 
   return (
     <main className="app">
@@ -18,7 +18,7 @@ export default function App() {
       <div className="layout-grid">
         <OrderBook book={book} error={bookError} />
         <TradesFeed trades={trades} status={status} />
-        <OrderForm />
+        <OrderForm placeOrder={placeOrder} connected={status === 'connected'} />
       </div>
     </main>
   )
