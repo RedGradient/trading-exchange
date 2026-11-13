@@ -3,13 +3,14 @@ from typing import Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aws import get_aws_client
-from app.schemas.orders import OrderCreate
 from app.engine.models import Order as EngineOrder, OrderStatus
-from app.models.orders import Order as OrderORM
-from app.engine.registry import EngineRegistry
 from app.engine.order_book import OrderBookSnapshot
+from app.engine.registry import EngineRegistry
+from app.models.orders import Order as OrderORM
+from app.schemas.order_book import OrderBookSnapshotEvent
+from app.schemas.orders import OrderCreate
 from app.schemas.trades import TradeEvent
-from app.services.publish_service import publish_trade_events
+from app.services.publish_service import publish_trade_events, publish_snapshot
 
 
 class OrderNotFoundException(Exception):
@@ -34,8 +35,13 @@ _TERMINAL_STATUSES = frozenset(
 
 
 class OrderService:
-    def __init__(self, sqs: Any | None = None) -> None:
+    def __init__(
+        self,
+        sqs: Any | None = None,
+        sns: Any | None = None,
+    ) -> None:
         self._sqs = sqs if sqs is not None else get_aws_client("sqs")
+        self._sns = sns if sns is not None else get_aws_client("sns")
 
     async def place_order(
         self, payload: OrderCreate, session: AsyncSession, registry: EngineRegistry
@@ -80,6 +86,17 @@ class OrderService:
                 list_of_trades.append(TradeEvent.from_trade_dto(trade))
 
         publish_trade_events(list_of_trades, self._sqs)
+
+        # Publish the snapshot
+        snapshot = engine.snapshot(10)
+        await publish_snapshot(
+            OrderBookSnapshotEvent(
+                symbol=payload.symbol,
+                asks=snapshot["asks"],
+                bids=snapshot["bids"]
+            ),
+            self._sns
+        )
 
         return order_orm
 

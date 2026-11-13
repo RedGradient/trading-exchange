@@ -2,6 +2,7 @@ import asyncio
 from typing import Any
 
 from app.config import settings
+from app.schemas.order_book import OrderBookSnapshotEvent
 from app.schemas.trades import TradeEvent, TradeSettledEvent
 
 
@@ -21,4 +22,12 @@ async def publish_trade_settled(event: TradeSettledEvent, sns: Any) -> None:
         sns.publish,
         TopicArn=settings.trades_settled_topic_arn,
         Message=event.model_dump_json(),
+    )
+
+
+async def publish_snapshot(event: OrderBookSnapshotEvent, sns: Any) -> None:
+    await asyncio.to_thread(
+        sns.publish,
+        TopicArn=settings.trades_settled_topic_arn,
+        Message=event.model_dump_json()
     )
