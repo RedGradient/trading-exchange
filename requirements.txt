@@ -12,5 +12,9 @@ sortedcontainers==2.4.0
 sqlalchemy==2.0.51
 asyncpg==0.31.0
 
+# Database migrations
+alembic==1.14.0
+psycopg2-binary==2.9.12
+
 # AWS / LocalStack
 boto3==1.42.59
