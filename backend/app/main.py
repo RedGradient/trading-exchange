@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -33,3 +34,8 @@ app.include_router(ws_router)
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+frontend_dist = Path("/opt/frontend/dist")
+if (frontend_dist / "index.html").is_file():
+    app.frontend("/", directory=frontend_dist, fallback=None)
