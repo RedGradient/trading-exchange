@@ -13,8 +13,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      localstack:
-        condition: service_healthy
+      terraform-init-service:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   settlement-worker:
@@ -28,8 +28,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      localstack:
-        condition: service_healthy
+      terraform-init-service:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   postgres:
@@ -63,6 +63,24 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  terraform-init-service:
+    image: hashicorp/terraform:1.17.1
+    container_name: exchange-terraform-init-service
+    working_dir: /terraform
+    volumes:
+      - ./infra/terraform:/terraform
+    environment:
+      TF_IN_AUTOMATION: "true"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        terraform init -input=false -lockfile=readonly
+        terraform apply -input=false -auto-approve -var='localstack_endpoint=http://localstack:4566'
+    depends_on:
+      localstack:
+        condition: service_healthy
+    restart: "no"
 
 volumes:
   postgres_data:
