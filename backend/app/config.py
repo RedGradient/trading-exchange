@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr
 
 
 class Settings(BaseSettings):
@@ -11,6 +12,9 @@ class Settings(BaseSettings):
     # Application
     environment: str = "local"
     log_level: str = "INFO"
+
+    jwt_secret_key: SecretStr | None = Field(default=None, min_length=32)
+    jwt_access_token_minutes: int = Field(default=15, gt=0)
 
     postgres_db: str = "exchange"
     postgres_user: str = "exchange_user"

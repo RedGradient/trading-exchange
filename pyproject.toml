@@ -3,6 +3,7 @@ name = "trading-exchange"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
+    "pyjwt==2.10.1",
     "fastapi>=0.162.5",
     "pydantic>=2.14.3",
     "sortedcontainers>=2.4.0",

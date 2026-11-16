@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from app.api.auth import router as auth_router
 from app.api.orders import router
 from app.api.websocket import ws_router
 from app.engine.registry import EngineRegistry
@@ -27,6 +28,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 register_exception_handlers(app)
+app.include_router(auth_router)
 app.include_router(router)
 app.include_router(ws_router)
 

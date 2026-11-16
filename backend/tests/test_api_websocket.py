@@ -38,6 +38,9 @@ def ws_client(
 
     monkeypatch.setattr("app.api.websocket.get_sessionmaker", lambda: db_sessionmaker)
     monkeypatch.setattr("app.api.websocket.get_aws_client", lambda _service: MagicMock())
+    monkeypatch.setattr(
+        "app.services.order_service.get_aws_client", lambda _service: MagicMock()
+    )
 
     async def noop_fanout() -> None:
         return

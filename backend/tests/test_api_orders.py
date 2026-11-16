@@ -1,42 +1,23 @@
 from collections.abc import AsyncGenerator
 from decimal import Decimal
-from unittest.mock import MagicMock
 
 import httpx
 import pytest
 import pytest_asyncio
 from fastapi import status
-from httpx import ASGITransport
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.api.orders import get_order_service
-from app.engine.registry import EngineRegistry
-from app.main import app
-from app.models.users import User
-from app.services.order_service import OrderService
-from app.session import get_db_session
 
 
 @pytest_asyncio.fixture
-async def api_client(db_session: AsyncSession) -> AsyncGenerator[httpx.AsyncClient]:
-    db_session.add(User())
-    await db_session.commit()
-
-    async def override_get_db_session() -> AsyncGenerator[AsyncSession]:
-        yield db_session
-
-    async def override_get_order_service() -> AsyncGenerator[OrderService]:
-        yield OrderService(sqs=MagicMock())
-
-    app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_order_service] = override_get_order_service
-    app.state.registry = EngineRegistry()
-
-    transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client
-
-    app.dependency_overrides.clear()
+async def api_client(
+    rest_client: httpx.AsyncClient,
+) -> AsyncGenerator[httpx.AsyncClient]:
+    credentials = {"username": "order-user", "password": "order-password"}
+    registration = await rest_client.post("/api/auth/register", json=credentials)
+    assert registration.status_code == 201
+    login = await rest_client.post("/api/auth/login", json=credentials)
+    assert login.status_code == 200
+    rest_client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
+    yield rest_client
 
 
 def _limit_order_payload(

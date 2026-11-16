@@ -1,0 +1,249 @@
+from datetime import datetime, timedelta, timezone
+
+import httpx
+import jwt
+import pytest
+import pytest_asyncio
+
+from app.config import settings
+
+# Apply the asyncio marker to all tests in this module.
+pytestmark = pytest.mark.asyncio
+
+CREDENTIALS = {"username": "alice", "password": "correct-password"}
+ORDER = {
+    "user_id": 1,
+    "symbol": "BTC-USD",
+    "side": "BUY",
+    "type": "LIMIT",
+    "price": "100.00",
+    "quantity": "2",
+}
+
+
+@pytest_asyncio.fixture
+async def auth_headers(rest_client: httpx.AsyncClient) -> dict[str, str]:
+    registration = await rest_client.post("/api/auth/register", json=CREDENTIALS)
+    assert registration.status_code == 201
+    response = await rest_client.post("/api/auth/login", json=CREDENTIALS)
+    assert response.status_code == 200
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+async def test_register_returns_user_without_credentials(
+    rest_client: httpx.AsyncClient,
+):
+    response = await rest_client.post("/api/auth/register", json=CREDENTIALS)
+
+    assert response.status_code == 201
+    assert response.json() == {"id": 1, "username": "alice"}
+
+
+async def test_register_duplicate_username_returns_conflict(
+    rest_client: httpx.AsyncClient,
+):
+    await rest_client.post("/api/auth/register", json=CREDENTIALS)
+    response = await rest_client.post("/api/auth/register", json=CREDENTIALS)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Username already exists"}
+    login = await rest_client.post("/api/auth/login", json=CREDENTIALS)
+    assert login.status_code == 200
+    other = await rest_client.post(
+        "/api/auth/register", json={**CREDENTIALS, "username": "bob"}
+    )
+    assert other.status_code == 201
+
+
+@pytest.mark.parametrize("endpoint", ["register", "login"])
+@pytest.mark.parametrize(
+    "credentials",
+    [
+        {"username": "ab", "password": "correct-password"},
+        {"username": "invalid username", "password": "correct-password"},
+        {"username": "alice", "password": "short"},
+        {"username": "alice"},
+        {"password": "correct-password"},
+    ],
+)
+async def test_invalid_credentials_body_returns_validation_error(
+    rest_client: httpx.AsyncClient, endpoint: str, credentials: dict
+):
+    response = await rest_client.post(f"/api/auth/{endpoint}", json=credentials)
+
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"], list)
+
+
+async def test_login_returns_valid_access_token(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str]
+):
+    response = await rest_client.post("/api/auth/login", json=CREDENTIALS)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data) == {"access_token", "token_type", "expires_in"}
+    assert data["token_type"] == "bearer"
+    assert data["expires_in"] == 900
+    claims = jwt.decode(
+        data["access_token"],
+        settings.jwt_secret_key.get_secret_value(),
+        algorithms=["HS256"],
+    )
+    assert claims["sub"] == "1"
+    assert claims["exp"] - claims["iat"] == data["expires_in"]
+    assert "password" not in claims
+    book = await rest_client.get(
+        "/api/order_book/BTC-USD",
+        headers={"Authorization": f"Bearer {data['access_token']}"},
+    )
+    assert book.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "credentials",
+    [
+        {**CREDENTIALS, "password": "wrong-password"},
+        {**CREDENTIALS, "username": "unknown-user"},
+    ],
+)
+async def test_login_invalid_credentials_returns_unauthorized(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str], credentials: dict
+):
+    response = await rest_client.post("/api/auth/login", json=credentials)
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json() == {"detail": "Invalid credentials or expired token"}
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("POST", "/api/orders", ORDER),
+        ("GET", "/api/orders/1", None),
+        ("POST", "/api/orders/1/cancel", None),
+        ("GET", "/api/order_book/BTC-USD", None),
+    ],
+)
+@pytest.mark.parametrize("authorization", [None, "Basic credentials", "Bearer"])
+async def test_protected_routes_require_bearer_token(
+    rest_client: httpx.AsyncClient,
+    method: str,
+    path: str,
+    body: dict | None,
+    authorization: str | None,
+):
+    headers = {"Authorization": authorization} if authorization else {}
+    response = await rest_client.request(method, path, json=body, headers=headers)
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json() == {"detail": "Invalid credentials or expired token"}
+
+
+@pytest.mark.parametrize(
+    "token_case",
+    [
+        "malformed",
+        "signature",
+        "expired",
+        "missing_exp",
+        "missing_sub",
+        "missing_iat",
+        "future_iat",
+        "invalid_sub",
+        "numeric_sub",
+        "unknown_user",
+        "algorithm",
+    ],
+)
+async def test_invalid_access_token_returns_unauthorized(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str], token_case: str
+):
+    now = datetime.now(timezone.utc)
+    claims = {"sub": "1", "iat": now, "exp": now + timedelta(minutes=15)}
+    key = settings.jwt_secret_key.get_secret_value()
+    algorithm = "HS256"
+    if token_case.startswith("missing_"):
+        claims.pop(token_case.removeprefix("missing_"))
+    elif token_case == "expired":
+        claims["exp"] = now - timedelta(seconds=1)
+    elif token_case == "future_iat":
+        claims["iat"] = now + timedelta(minutes=5)
+    elif token_case == "invalid_sub":
+        claims["sub"] = "not-an-id"
+    elif token_case == "numeric_sub":
+        claims["sub"] = 1
+    elif token_case == "unknown_user":
+        claims["sub"] = "999"
+    elif token_case == "signature":
+        key = "another-signing-key-" * 4
+    elif token_case == "algorithm":
+        algorithm = "HS384"
+    token = (
+        "not-a-jwt"
+        if token_case == "malformed"
+        else jwt.encode(claims, key, algorithm=algorithm)
+    )
+    response = await rest_client.get(
+        "/api/order_book/BTC-USD", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json() == {"detail": "Invalid credentials or expired token"}
+
+
+async def test_missing_signing_key_returns_service_unavailable(
+    rest_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "jwt_secret_key", None)
+
+    login = await rest_client.post("/api/auth/login", json=CREDENTIALS)
+    book = await rest_client.get("/api/order_book/BTC-USD", headers=auth_headers)
+
+    for response in (login, book):
+        assert response.status_code == 503
+        assert response.json() == {"detail": "JWT_SECRET_KEY is not configured"}
+
+
+async def test_cannot_place_order_for_another_user(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str]
+):
+    response = await rest_client.post(
+        "/api/orders", json={**ORDER, "user_id": 2}, headers=auth_headers
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Cannot place an order for another user"}
+    book = await rest_client.get("/api/order_book/BTC-USD", headers=auth_headers)
+    assert book.json() == {"symbol": "BTC-USD", "asks": [], "bids": []}
+
+
+async def test_cannot_read_or_cancel_another_users_order(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str]
+):
+    created = await rest_client.post("/api/orders", json=ORDER, headers=auth_headers)
+    assert created.status_code == 201
+    order_id = created.json()["id"]
+    credentials = {"username": "bob", "password": "another-password"}
+    registration = await rest_client.post("/api/auth/register", json=credentials)
+    assert registration.status_code == 201
+    login = await rest_client.post("/api/auth/login", json=credentials)
+    assert login.status_code == 200
+    other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    read = await rest_client.get(f"/api/orders/{order_id}", headers=other_headers)
+    cancel = await rest_client.post(
+        f"/api/orders/{order_id}/cancel", headers=other_headers
+    )
+
+    for response in (read, cancel):
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Order not found"}
+    original = await rest_client.get(f"/api/orders/{order_id}", headers=auth_headers)
+    assert original.status_code == 200
+    assert original.json()["status"] == "OPEN"

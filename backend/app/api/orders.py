@@ -1,18 +1,20 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aws import get_aws_client
+from app.api.auth import CurrentUser, get_current_user
 from app.engine.registry import EngineRegistry
 from app.schemas.order_book import OrderBookSnapshotPayload
 from app.schemas.orders import OrderCreate, OrderResponse
-from app.services.order_service import OrderService
+from app.services.order_service import OrderNotFoundException, OrderService
 from app.session import get_db_session
 
 router = APIRouter(
     prefix="/api",
     tags=["Orders"],
+    dependencies=[Depends(get_current_user)],
 )
 
 _ORDER_NOT_FOUND = {
@@ -61,10 +63,15 @@ def get_order_service() -> OrderService:
 )
 async def place_order(
     payload: OrderCreate,
+    current_user: CurrentUser,
     service: OrderService = Depends(get_order_service),
     session: AsyncSession = Depends(get_db_session),
     registry: EngineRegistry = Depends(get_engine_registry),
 ) -> OrderResponse:
+    if payload.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403, detail="Cannot place an order for another user"
+        )
     order = await service.place_order(payload, session, registry)
     return OrderResponse.from_orm(order)
 
@@ -78,10 +85,13 @@ async def place_order(
 )
 async def get_order(
     order_id: Annotated[int, Path(description="Unique order identifier.", ge=1)],
+    current_user: CurrentUser,
     service: OrderService = Depends(get_order_service),
     session: AsyncSession = Depends(get_db_session),
 ) -> OrderResponse:
     order = await service.get_order(order_id, session)
+    if order.user_id != current_user.id:
+        raise OrderNotFoundException()
     return OrderResponse.from_orm(order)
 
 
@@ -105,10 +115,14 @@ async def get_order(
 )
 async def cancel_order(
     order_id: Annotated[int, Path(description="Unique order identifier.", ge=1)],
+    current_user: CurrentUser,
     service: OrderService = Depends(get_order_service),
     session: AsyncSession = Depends(get_db_session),
     registry: EngineRegistry = Depends(get_engine_registry),
 ) -> OrderResponse:
+    order = await service.get_order(order_id, session)
+    if order.user_id != current_user.id:
+        raise OrderNotFoundException()
     order = await service.cancel_order(order_id, session, registry)
     return OrderResponse.from_orm(order)
 
