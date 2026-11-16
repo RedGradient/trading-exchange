@@ -5,6 +5,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.engine.matching_engine import SymbolMismatchError
+from app.services.auth_service import (
+    AuthConfigurationError,
+    InvalidCredentialsError,
+    UsernameAlreadyExistsError,
+)
 from app.services.order_service import (
     OrderNotCancellableException,
     OrderNotFoundException,
@@ -15,6 +20,32 @@ logger = logging.getLogger(__name__)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(InvalidCredentialsError)
+    async def invalid_credentials_handler(
+        _request: Request, _exc: InvalidCredentialsError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid credentials or expired token"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    @app.exception_handler(AuthConfigurationError)
+    async def auth_configuration_handler(
+        _request: Request, _exc: AuthConfigurationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=503, content={"detail": "JWT_SECRET_KEY is not configured"}
+        )
+
+    @app.exception_handler(UsernameAlreadyExistsError)
+    async def username_already_exists_handler(
+        _request: Request, _exc: UsernameAlreadyExistsError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409, content={"detail": "Username already exists"}
+        )
+
     @app.exception_handler(OrderNotFoundException)
     async def order_not_found_handler(
         _request: Request,
