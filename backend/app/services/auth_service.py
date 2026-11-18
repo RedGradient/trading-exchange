@@ -56,7 +56,7 @@ def get_signing_key() -> str:
     return settings.jwt_secret_key.get_secret_value()
 
 
-async def get_user_from_token(token: str, session: AsyncSession) -> User:
+def decode_token(token: str, token_type: str = "access") -> dict:
     key = get_signing_key()
     try:
         claims = jwt.decode(
@@ -65,6 +65,8 @@ async def get_user_from_token(token: str, session: AsyncSession) -> User:
             algorithms=["HS256"],
             options={"require": ["sub", "exp", "iat"]},
         )
+        if claims.get("token_type", "access") != token_type:
+            raise InvalidCredentialsError()
         subject = claims["sub"]
         if (
             not isinstance(subject, str)
@@ -78,7 +80,14 @@ async def get_user_from_token(token: str, session: AsyncSession) -> User:
     except (jwt.InvalidTokenError, ValueError) as exc:
         raise InvalidCredentialsError() from exc
 
-    user = await session.get(User, user_id)
+    return claims
+
+
+async def get_user_from_token(
+    token: str, session: AsyncSession, token_type: str = "access"
+) -> User:
+    claims = decode_token(token, token_type)
+    user = await session.get(User, int(claims["sub"]))
     if user is None:
         raise InvalidCredentialsError()
     return user
@@ -113,11 +122,29 @@ async def login(
     )
     if not password_valid or user is None:
         raise InvalidCredentialsError()
+    return create_access_token(user.id, key)
+
+
+def create_access_token(user_id: int, key: str) -> TokenResponse:
     now = datetime.now(timezone.utc)
     lifetime = timedelta(minutes=settings.jwt_access_token_minutes)
     token = jwt.encode(
-        {"sub": str(user.id), "iat": now, "exp": now + lifetime},
+        {"sub": str(user_id), "iat": now, "exp": now + lifetime},
         key,
         algorithm="HS256",
     )
     return TokenResponse(access_token=token, expires_in=int(lifetime.total_seconds()))
+
+
+def create_refresh_token(user_id: int, key: str) -> str:
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {
+            "sub": str(user_id),
+            "iat": now,
+            "exp": now + timedelta(days=settings.jwt_refresh_token_days),
+            "token_type": "refresh",
+        },
+        key,
+        algorithm="HS256",
+    )

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 from fastapi import WebSocket
@@ -30,7 +31,10 @@ class ConnectionManager:
 
     async def broadcast_json(self, message: dict) -> None:
         stale: list[WebSocket] = []
-        for ws in self._connections:
+        for ws in tuple(self._connections):
+            if time.time() >= ws.state.expires_at:
+                stale.append(ws)
+                continue
             try:
                 await ws.send_json(message)
             except Exception:
@@ -86,10 +90,7 @@ def parse_message(msg: dict) -> tuple[dict[str, Any], str]:
     else:
         raise ValueError("Unexpected type of message")
 
-    return (
-        event.model_dump(mode="json", exclude={"event_type"}),
-        event_type
-    )
+    return event.model_dump(mode="json", exclude={"event_type"}), event_type
 
 
 def delete_message(sqs: Any, msg: dict) -> None:

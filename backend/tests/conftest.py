@@ -67,6 +67,7 @@ async def rest_client(
 ) -> AsyncGenerator[httpx.AsyncClient]:
     monkeypatch.setattr(settings, "jwt_secret_key", SecretStr("test-signing-key-" * 4))
     monkeypatch.setattr(settings, "jwt_access_token_minutes", 15)
+    monkeypatch.setattr(settings, "ws_allowed_origins", ["http://localhost:8000"])
     monkeypatch.setattr("app.api.auth.get_sessionmaker", lambda: db_sessionmaker)
 
     async def override_session() -> AsyncGenerator[AsyncSession]:

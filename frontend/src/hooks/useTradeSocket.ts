@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { getOrderBook } from "../api/client"
+import { AuthenticationError, getOrderBook, refreshAccessToken } from "../api/client"
 import type { OrderBookSnapshot, OrderBookSnapshotMessage, OrderCreate, OrderPlaceMessage, OrderPlacedMessage, OrderResponse, TradeSettledEvent, TradeSettledMessage, WsErrorMessage } from "../types/api"
 
 type PendingOrder = {
@@ -12,10 +12,11 @@ const ORDER_RESPONSE_TIMEOUT_MS = 15000
 
 type WsStatus = 'connecting' | 'connected' | 'disconnected'
 
-export function useTradeSocket(symbol: string) {
+export function useTradeSocket(symbol: string, sessionVersion = 0) {
     const [trades, setTrades] = useState<TradeSettledEvent[]>([])
     const [book, setBook] = useState<OrderBookSnapshot | null>(null)
     const [bookError, setBookError] = useState<string | null>(null)
+    const [requiresLogin, setRequiresLogin] = useState(true)
     const [status, setStatus] = useState<WsStatus>('connecting')
 
     const socketRef = useRef<WebSocket | null>(null)
@@ -59,24 +60,45 @@ export function useTradeSocket(symbol: string) {
         let unmounted = false
 
         let bookRequest = 0
+        let bookRequestsInFlight = 0
+        let accessToken: string | undefined
 
         const loadBook = async () => {
             const request = ++bookRequest
+            bookRequestsInFlight++
             try {
-                const snapshot = await getOrderBook(symbol)
+                const snapshot = await getOrderBook(symbol, 10, accessToken)
                 if (unmounted || request !== bookRequest) return
                 setBook(snapshot)
                 setBookError(null)
             } catch (error: unknown) {
                 if (unmounted || request !== bookRequest) return
                 setBookError(error instanceof Error ? error.message : 'Failed to load order book')
+            } finally {
+                bookRequestsInFlight--
             }
         }
 
-        const connect = () => {
+        const connect = async () => {
             if (unmounted) return
 
             setStatus('connecting')
+            try {
+                accessToken = await refreshAccessToken()
+            } catch (error: unknown) {
+                if (unmounted) return
+                setStatus('disconnected')
+                if (error instanceof AuthenticationError) {
+                    accessToken = undefined
+                    setRequiresLogin(true)
+                    setTrades([])
+                    void loadBook()
+                } else {
+                    reconnectTimer = window.setTimeout(connect, 2000)
+                }
+                return
+            }
+            if (unmounted) return
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
@@ -90,6 +112,7 @@ export function useTradeSocket(symbol: string) {
                     return
                 }
                 setStatus('connected')
+                setRequiresLogin(false)
                 void loadBook()
             }
 
@@ -132,14 +155,20 @@ export function useTradeSocket(symbol: string) {
             }
         }
 
+        const guestPoll = window.setInterval(() => {
+            if (ws?.readyState !== WebSocket.OPEN && bookRequestsInFlight === 0) {
+                void loadBook()
+            }
+        }, 2000)
         void loadBook()
-        connect()
+        void connect()
 
         return () => {
             unmounted = true
             socketRef.current = null
             rejectPendingOrders()
             if (reconnectTimer) window.clearTimeout(reconnectTimer)
+            window.clearInterval(guestPoll)
             if (ws) {
                 ws.onclose = null
                 if (ws.readyState === WebSocket.OPEN) {
@@ -147,7 +176,7 @@ export function useTradeSocket(symbol: string) {
                 }
             }
         }
-    }, [symbol])
+    }, [symbol, sessionVersion])
 
-    return { trades, status, book, bookError, placeOrder }
+    return { trades, status, book, bookError, placeOrder, requiresLogin }
 }

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, sta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aws import get_aws_client
-from app.api.auth import CurrentUser, get_current_user
+from app.api.auth import CurrentUser
 from app.engine.registry import EngineRegistry
 from app.schemas.order_book import OrderBookSnapshotPayload
 from app.schemas.orders import OrderCreate, OrderResponse
@@ -14,7 +14,6 @@ from app.session import get_db_session
 router = APIRouter(
     prefix="/api",
     tags=["Orders"],
-    dependencies=[Depends(get_current_user)],
 )
 
 _ORDER_NOT_FOUND = {

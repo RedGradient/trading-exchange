@@ -1,14 +1,21 @@
 """WebSocket endpoint for market data and order commands."""
 
+import asyncio
+import time
+from contextlib import suppress
+
 import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
+from starlette.websockets import WebSocketState
 
 from app.aws import get_aws_client
+from app.config import settings
+from app.services import auth_service
 from app.schemas.orders import OrderCreate, OrderResponse
 from app.schemas.websocket import WsError, WsMessage
 from app.services import order_service
@@ -39,13 +46,48 @@ WS_EXCEPTION_MAPPING: dict[type[Exception], tuple[str, Any]] = {
 @ws_router.websocket("/ws")
 async def market_ws(websocket: WebSocket) -> None:
     """Accept a WebSocket connection and process incoming messages until disconnect."""
-    await ws_manager.connect(websocket)
+
+    if websocket.headers.get("origin") not in settings.ws_allowed_origins:
+        raise WebSocketException(code=1008, reason="Origin is not allowed")
+    token = websocket.cookies.get("access_token")
+    if not token:
+        raise WebSocketException(code=4401, reason="Authentication required")
     try:
-        while True:
-            message_raw = await websocket.receive_text()
-            await handle_message(websocket, message_raw)
-    except WebSocketDisconnect:
+        async with get_sessionmaker()() as session:
+            user = await auth_service.get_user_from_token(token, session)
+        expires_at = float(auth_service.decode_token(token)["exp"])
+    except auth_service.InvalidCredentialsError as exc:
+        raise WebSocketException(code=4401, reason="Invalid or expired token") from exc
+    except auth_service.AuthConfigurationError as exc:
+        raise WebSocketException(
+            code=1011, reason="Authentication is unavailable"
+        ) from exc
+
+    websocket.state.user_id = user.id
+    websocket.state.expires_at = expires_at
+    await ws_manager.connect(websocket)
+
+    async def close_on_expiry() -> None:
+        await asyncio.sleep(max(0, expires_at - time.time()))
         ws_manager.disconnect(websocket)
+        await websocket.close(code=4401, reason="Access token expired")
+
+    expiry_task = asyncio.create_task(close_on_expiry())
+    try:
+        while time.time() < expires_at:
+            message_raw = await websocket.receive_text()
+            if time.time() >= expires_at:
+                await expiry_task
+                break
+            await handle_message(websocket, message_raw)
+        await expiry_task
+    except WebSocketDisconnect:
+        pass
+    finally:
+        ws_manager.disconnect(websocket)
+        expiry_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await expiry_task
 
 
 async def handle_message(websocket: WebSocket, message_raw: str) -> None:
@@ -99,12 +141,16 @@ async def send_error(
 
 async def order_place_handler(websocket: WebSocket, request: WsMessage) -> None:
     """Validate an order payload, place the order, and return `order.placed`."""
-    payload = OrderCreate.model_validate(request.payload)
+    payload = OrderCreate.model_validate(
+        {**request.payload, "user_id": websocket.state.user_id}
+    )
     service = OrderService(sqs=get_aws_client("sqs"))
     registry = websocket.app.state.registry
     async with get_sessionmaker()() as session:
         order = await service.place_order(payload, session, registry)
 
+    if websocket.application_state != WebSocketState.CONNECTED:
+        return
     response_payload = OrderResponse.from_orm(order)
     await websocket.send_json(
         WsMessage(
