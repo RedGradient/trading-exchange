@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     jwt_secret_key: SecretStr | None = Field(default=None, min_length=32)
     jwt_access_token_minutes: int = Field(default=15, gt=0)
+    jwt_refresh_token_days: int = Field(default=7, gt=0)
+    auth_cookie_secure: bool = False
+    ws_allowed_origins: list[str] = ["http://localhost:8000", "http://localhost:5173"]
 
     postgres_db: str = "exchange"
     postgres_user: str = "exchange_user"

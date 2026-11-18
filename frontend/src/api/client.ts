@@ -13,9 +13,11 @@ async function readError(response: Response): Promise<string> {
 export async function getOrderBook(
     symbol: string,
     depth = 10,
+    accessToken?: string,
 ): Promise<OrderBookSnapshot> {
     const response = await fetch(
-        `/api/order_book/${encodeURIComponent(symbol)}?depth=${depth}`
+        `/api/order_book/${encodeURIComponent(symbol)}?depth=${depth}`,
+        { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} }
     )
 
     if (!response.ok) {
@@ -51,4 +53,17 @@ export async function cancelOrder(orderId: number): Promise<OrderResponse> {
   }
 
   return response.json()
+}
+
+export class AuthenticationError extends Error {}
+
+export async function refreshAccessToken(): Promise<string> {
+  const response = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' })
+  if (response.status === 401) {
+    throw new AuthenticationError('Your session has expired. Sign in again.')
+  }
+  if (response.status === 403) throw new AuthenticationError(await readError(response))
+  if (!response.ok) throw new Error(await readError(response))
+  const token = await response.json()
+  return token.access_token
 }

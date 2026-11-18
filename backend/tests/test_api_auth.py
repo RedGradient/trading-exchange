@@ -247,3 +247,93 @@ async def test_cannot_read_or_cancel_another_users_order(
     original = await rest_client.get(f"/api/orders/{order_id}", headers=auth_headers)
     assert original.status_code == 200
     assert original.json()["status"] == "OPEN"
+
+
+async def test_login_sets_httponly_session_cookies(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str]
+):
+    response = await rest_client.post("/api/auth/login", json=CREDENTIALS)
+    cookies = response.headers.get_list("set-cookie")
+    assert len(cookies) == 2
+    assert all(
+        "HttpOnly" in cookie and "SameSite=strict" in cookie for cookie in cookies
+    )
+    assert any("Path=/ws" in cookie for cookie in cookies)
+    assert any("Path=/api/auth/refresh" in cookie for cookie in cookies)
+
+
+async def test_refresh_restores_session_after_access_token_expires(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str]
+):
+    now = datetime.now(timezone.utc)
+    expired = jwt.encode(
+        {
+            "sub": "1",
+            "iat": now - timedelta(minutes=20),
+            "exp": now - timedelta(seconds=1),
+        },
+        settings.jwt_secret_key.get_secret_value(),
+        algorithm="HS256",
+    )
+    denied = await rest_client.get(
+        "/api/order_book/BTC-USD", headers={"Authorization": f"Bearer {expired}"}
+    )
+    assert denied.status_code == 401
+    response = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert response.status_code == 200
+    book = await rest_client.get(
+        "/api/order_book/BTC-USD",
+        headers={"Authorization": f"Bearer {response.json()['access_token']}"},
+    )
+    assert book.status_code == 200
+    assert "access_token=" in response.headers["set-cookie"]
+
+
+@pytest.mark.parametrize("origin", [None, "null", "http://evil.example"])
+async def test_refresh_rejects_untrusted_origin(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str], origin: str | None
+):
+    headers = {"Origin": origin} if origin is not None else {}
+    response = await rest_client.post("/api/auth/refresh", headers=headers)
+    assert response.status_code == 403
+
+
+async def test_refresh_requires_refresh_cookie(rest_client: httpx.AsyncClient):
+    response = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert response.status_code == 401
+
+
+async def test_access_token_cannot_refresh_session(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str]
+):
+    rest_client.cookies.clear()
+    rest_client.cookies.set(
+        "refresh_token", auth_headers["Authorization"].removeprefix("Bearer ")
+    )
+    response = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert response.status_code == 401
+
+
+async def test_expired_refresh_token_is_rejected(rest_client: httpx.AsyncClient):
+    now = datetime.now(timezone.utc)
+    token = jwt.encode(
+        {
+            "sub": "1",
+            "iat": now - timedelta(days=8),
+            "exp": now - timedelta(days=1),
+            "token_type": "refresh",
+        },
+        settings.jwt_secret_key.get_secret_value(),
+        algorithm="HS256",
+    )
+    rest_client.cookies.set("refresh_token", token, path="/api/auth/refresh")
+    response = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert response.status_code == 401

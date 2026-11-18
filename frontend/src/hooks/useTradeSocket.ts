@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { getOrderBook } from "../api/client"
+import { AuthenticationError, getOrderBook, refreshAccessToken } from "../api/client"
 import type { OrderBookSnapshot, OrderBookSnapshotMessage, OrderCreate, OrderPlaceMessage, OrderPlacedMessage, OrderResponse, TradeSettledEvent, TradeSettledMessage, WsErrorMessage } from "../types/api"
 
 type PendingOrder = {
@@ -59,11 +59,12 @@ export function useTradeSocket(symbol: string) {
         let unmounted = false
 
         let bookRequest = 0
+        let accessToken: string | undefined
 
         const loadBook = async () => {
             const request = ++bookRequest
             try {
-                const snapshot = await getOrderBook(symbol)
+                const snapshot = await getOrderBook(symbol, 10, accessToken)
                 if (unmounted || request !== bookRequest) return
                 setBook(snapshot)
                 setBookError(null)
@@ -73,10 +74,22 @@ export function useTradeSocket(symbol: string) {
             }
         }
 
-        const connect = () => {
+        const connect = async () => {
             if (unmounted) return
 
             setStatus('connecting')
+            try {
+                accessToken = await refreshAccessToken()
+            } catch (error: unknown) {
+                if (unmounted) return
+                setStatus('disconnected')
+                setBookError(error instanceof Error ? error.message : 'Failed to restore session')
+                if (!(error instanceof AuthenticationError)) {
+                    reconnectTimer = window.setTimeout(connect, 2000)
+                }
+                return
+            }
+            if (unmounted) return
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
@@ -132,8 +145,7 @@ export function useTradeSocket(symbol: string) {
             }
         }
 
-        void loadBook()
-        connect()
+        void connect()
 
         return () => {
             unmounted = true
