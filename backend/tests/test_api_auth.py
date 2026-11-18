@@ -123,7 +123,6 @@ async def test_login_invalid_credentials_returns_unauthorized(
         ("POST", "/api/orders", ORDER),
         ("GET", "/api/orders/1", None),
         ("POST", "/api/orders/1/cancel", None),
-        ("GET", "/api/order_book/BTC-USD", None),
     ],
 )
 @pytest.mark.parametrize("authorization", [None, "Basic credentials", "Bearer"])
@@ -187,7 +186,7 @@ async def test_invalid_access_token_returns_unauthorized(
         else jwt.encode(claims, key, algorithm=algorithm)
     )
     response = await rest_client.get(
-        "/api/order_book/BTC-USD", headers={"Authorization": f"Bearer {token}"}
+        "/api/orders/1", headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 401
@@ -203,7 +202,7 @@ async def test_missing_signing_key_returns_service_unavailable(
     monkeypatch.setattr(settings, "jwt_secret_key", None)
 
     login = await rest_client.post("/api/auth/login", json=CREDENTIALS)
-    book = await rest_client.get("/api/order_book/BTC-USD", headers=auth_headers)
+    book = await rest_client.get("/api/orders/1", headers=auth_headers)
 
     for response in (login, book):
         assert response.status_code == 503
@@ -276,7 +275,7 @@ async def test_refresh_restores_session_after_access_token_expires(
         algorithm="HS256",
     )
     denied = await rest_client.get(
-        "/api/order_book/BTC-USD", headers={"Authorization": f"Bearer {expired}"}
+        "/api/orders/1", headers={"Authorization": f"Bearer {expired}"}
     )
     assert denied.status_code == 401
     response = await rest_client.post(
@@ -337,3 +336,9 @@ async def test_expired_refresh_token_is_rejected(rest_client: httpx.AsyncClient)
         "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
     )
     assert response.status_code == 401
+
+
+async def test_order_book_is_public(rest_client: httpx.AsyncClient):
+    response = await rest_client.get("/api/order_book/BTC-USD")
+    assert response.status_code == 200
+    assert response.json() == {"symbol": "BTC-USD", "asks": [], "bids": []}

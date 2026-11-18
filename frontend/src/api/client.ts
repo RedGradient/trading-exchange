@@ -67,3 +67,24 @@ export async function refreshAccessToken(): Promise<string> {
   const token = await response.json()
   return token.access_token
 }
+
+
+export async function login(username: string, password: string): Promise<void> {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+}
+
+
+export async function register(username: string, password: string): Promise<void> {
+  const response = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+}
