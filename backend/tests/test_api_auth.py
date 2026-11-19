@@ -1,11 +1,15 @@
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 import httpx
 import jwt
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.models.refresh_sessions import RefreshSession
 
 # Apply the asyncio marker to all tests in this module.
 pytestmark = pytest.mark.asyncio
@@ -377,3 +381,49 @@ async def test_logout_rejects_untrusted_origin(
 
     assert response.status_code == 403
     assert rest_client.cookies.get("refresh_token")
+
+
+async def test_each_login_persists_a_separate_refresh_session(
+    rest_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    db_sessionmaker: async_sessionmaker[AsyncSession],
+):
+    first_token = rest_client.cookies.get("refresh_token")
+    response = await rest_client.post("/api/auth/login", json=CREDENTIALS)
+    assert response.status_code == 200
+    second_token = rest_client.cookies.get("refresh_token")
+    assert first_token != second_token
+
+    claims = [
+        jwt.decode(
+            token, settings.jwt_secret_key.get_secret_value(), algorithms=["HS256"]
+        )
+        for token in (first_token, second_token)
+    ]
+    assert claims[0]["jti"] != claims[1]["jti"]
+    async with db_sessionmaker() as session:
+        for payload in claims:
+            stored = await session.get(RefreshSession, UUID(payload["jti"]))
+            assert stored is not None
+            assert stored.user_id == int(payload["sub"]) == 1
+            assert (
+                stored.expires_at.replace(tzinfo=timezone.utc).timestamp()
+                == payload["exp"]
+            )
+            assert stored.revoked is False
+            assert payload["token_type"] == "refresh"
+
+
+async def test_failed_login_does_not_create_refresh_session(
+    rest_client: httpx.AsyncClient,
+    db_sessionmaker: async_sessionmaker[AsyncSession],
+):
+    registration = await rest_client.post("/api/auth/register", json=CREDENTIALS)
+    assert registration.status_code == 201
+    response = await rest_client.post(
+        "/api/auth/login", json={**CREDENTIALS, "password": "wrong-password"}
+    )
+    assert response.status_code == 401
+    assert rest_client.cookies.get("refresh_token") is None
+    async with db_sessionmaker() as session:
+        assert (await session.scalars(select(RefreshSession))).all() == []

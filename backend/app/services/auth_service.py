@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import jwt
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.refresh_sessions import RefreshSession
 from app.models.users import User
 from app.schemas.auth import Credentials, TokenResponse, UserResponse
 
@@ -111,7 +113,7 @@ async def register_user(
 
 async def login(
     credentials: Credentials, session: AsyncSession, key: str
-) -> TokenResponse:
+) -> tuple[TokenResponse, str]:
     user = await session.scalar(
         select(User).where(User.username == credentials.username)
     )
@@ -122,7 +124,11 @@ async def login(
     )
     if not password_valid or user is None:
         raise InvalidCredentialsError()
-    return create_access_token(user.id, key)
+    access_token = create_access_token(user.id, key)
+    refresh_session = create_refresh_session(user.id, session)
+    refresh_token = create_refresh_token(refresh_session, key)
+    await session.commit()
+    return access_token, refresh_token
 
 
 def create_access_token(user_id: int, key: str) -> TokenResponse:
@@ -136,13 +142,24 @@ def create_access_token(user_id: int, key: str) -> TokenResponse:
     return TokenResponse(access_token=token, expires_in=int(lifetime.total_seconds()))
 
 
-def create_refresh_token(user_id: int, key: str) -> str:
-    now = datetime.now(timezone.utc)
+def create_refresh_session(user_id: int, session: AsyncSession) -> RefreshSession:
+    refresh_session = RefreshSession(
+        jti=uuid4(),
+        user_id=user_id,
+        expires_at=datetime.now(timezone.utc).replace(microsecond=0)
+        + timedelta(days=settings.jwt_refresh_token_days),
+    )
+    session.add(refresh_session)
+    return refresh_session
+
+
+def create_refresh_token(refresh_session: RefreshSession, key: str) -> str:
     return jwt.encode(
         {
-            "sub": str(user_id),
-            "iat": now,
-            "exp": now + timedelta(days=settings.jwt_refresh_token_days),
+            "sub": str(refresh_session.user_id),
+            "jti": str(refresh_session.jti),
+            "iat": datetime.now(timezone.utc),
+            "exp": refresh_session.expires_at,
             "token_type": "refresh",
         },
         key,

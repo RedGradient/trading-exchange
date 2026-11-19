@@ -48,11 +48,10 @@ async def login(
     origin = request.headers.get("origin")
     if origin is not None and origin not in settings.ws_allowed_origins:
         raise HTTPException(status_code=403, detail="Origin is not allowed")
-    token = await auth_service.login(credentials, session, key)
-    user_id = int(auth_service.decode_token(token.access_token)["sub"])
+    token, refresh_token = await auth_service.login(credentials, session, key)
     response.set_cookie(
         "refresh_token",
-        auth_service.create_refresh_token(user_id, key),
+        refresh_token,
         httponly=True,
         secure=settings.auth_cookie_secure,
         samesite="strict",
