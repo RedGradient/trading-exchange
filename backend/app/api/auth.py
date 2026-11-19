@@ -1,6 +1,7 @@
 """REST authentication routes and FastAPI authentication dependencies."""
 
 from typing import Annotated
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -48,19 +49,23 @@ async def login(
     origin = request.headers.get("origin")
     if origin is not None and origin not in settings.ws_allowed_origins:
         raise HTTPException(status_code=403, detail="Origin is not allowed")
-    token = await auth_service.login(credentials, session, key)
-    user_id = int(auth_service.decode_token(token.access_token)["sub"])
+    token, refresh_token = await auth_service.login(credentials, session, key)
+    set_refresh_cookie(response, refresh_token)
+    set_access_cookie(response, token)
+    return token
+
+
+def set_refresh_cookie(response: Response, token: str) -> None:
+    claims = auth_service.decode_token(token, token_type="refresh")
     response.set_cookie(
         "refresh_token",
-        auth_service.create_refresh_token(user_id, key),
+        token,
+        path="/api/auth",
         httponly=True,
         secure=settings.auth_cookie_secure,
         samesite="strict",
-        path="/api/auth/refresh",
-        max_age=settings.jwt_refresh_token_days * 86400,
+        expires=datetime.fromtimestamp(claims["exp"], timezone.utc),
     )
-    set_access_cookie(response, token)
-    return token
 
 
 def set_access_cookie(response: Response, token: TokenResponse) -> None:
@@ -91,5 +96,33 @@ async def refresh(
         refresh_token, session, token_type="refresh"
     )
     token = auth_service.create_access_token(user.id, key)
+    set_refresh_cookie(response, refresh_token)
     set_access_cookie(response, token)
     return token
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    request: Request,
+    response: Response,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> None:
+    if request.headers.get("origin") not in settings.ws_allowed_origins:
+        raise HTTPException(status_code=403, detail="Origin is not allowed")
+    refresh_token = request.cookies.get("refresh_token")
+    if refresh_token:
+        await auth_service.revoke_refresh_session(refresh_token, session)
+    response.delete_cookie(
+        "access_token",
+        path="/ws",
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        "refresh_token",
+        path="/api/auth",
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite="strict",
+    )

@@ -1,11 +1,15 @@
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 import httpx
 import jwt
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
+from app.models.refresh_sessions import RefreshSession
 
 # Apply the asyncio marker to all tests in this module.
 pytestmark = pytest.mark.asyncio
@@ -253,12 +257,12 @@ async def test_login_sets_httponly_session_cookies(
 ):
     response = await rest_client.post("/api/auth/login", json=CREDENTIALS)
     cookies = response.headers.get_list("set-cookie")
-    assert len(cookies) == 2
+    assert len(cookies) == 3
     assert all(
         "HttpOnly" in cookie and "SameSite=strict" in cookie for cookie in cookies
     )
     assert any("Path=/ws" in cookie for cookie in cookies)
-    assert any("Path=/api/auth/refresh" in cookie for cookie in cookies)
+    assert any("Path=/api/auth;" in cookie for cookie in cookies)
 
 
 async def test_refresh_restores_session_after_access_token_expires(
@@ -287,7 +291,9 @@ async def test_refresh_restores_session_after_access_token_expires(
         headers={"Authorization": f"Bearer {response.json()['access_token']}"},
     )
     assert book.status_code == 200
-    assert "access_token=" in response.headers["set-cookie"]
+    assert any(
+        "access_token=" in cookie for cookie in response.headers.get_list("set-cookie")
+    )
 
 
 @pytest.mark.parametrize("origin", [None, "null", "http://evil.example"])
@@ -342,3 +348,292 @@ async def test_order_book_is_public(rest_client: httpx.AsyncClient):
     response = await rest_client.get("/api/order_book/BTC-USD")
     assert response.status_code == 200
     assert response.json() == {"symbol": "BTC-USD", "asks": [], "bids": []}
+
+
+async def test_logout_clears_session_cookies(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str]
+):
+    assert rest_client.cookies.get("access_token")
+    assert rest_client.cookies.get("refresh_token")
+
+    response = await rest_client.post(
+        "/api/auth/logout", headers={"Origin": "http://localhost:8000"}
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert rest_client.cookies.get("access_token") is None
+    assert rest_client.cookies.get("refresh_token") is None
+    refresh = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert refresh.status_code == 401
+    repeated = await rest_client.post(
+        "/api/auth/logout", headers={"Origin": "http://localhost:8000"}
+    )
+    assert repeated.status_code == 204
+
+
+@pytest.mark.parametrize("origin", [None, "http://evil.example"])
+async def test_logout_rejects_untrusted_origin(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str], origin: str | None
+):
+    headers = {"Origin": origin} if origin is not None else {}
+    response = await rest_client.post("/api/auth/logout", headers=headers)
+
+    assert response.status_code == 403
+    assert rest_client.cookies.get("refresh_token")
+
+
+async def test_each_login_persists_a_separate_refresh_session(
+    rest_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    db_sessionmaker: async_sessionmaker[AsyncSession],
+):
+    first_token = rest_client.cookies.get("refresh_token")
+    response = await rest_client.post("/api/auth/login", json=CREDENTIALS)
+    assert response.status_code == 200
+    second_token = rest_client.cookies.get("refresh_token")
+    assert first_token != second_token
+
+    claims = [
+        jwt.decode(
+            token, settings.jwt_secret_key.get_secret_value(), algorithms=["HS256"]
+        )
+        for token in (first_token, second_token)
+    ]
+    assert claims[0]["jti"] != claims[1]["jti"]
+    async with db_sessionmaker() as session:
+        for payload in claims:
+            stored = await session.get(RefreshSession, UUID(payload["jti"]))
+            assert stored is not None
+            assert stored.user_id == int(payload["sub"]) == 1
+            assert (
+                stored.expires_at.replace(tzinfo=timezone.utc).timestamp()
+                == payload["exp"]
+            )
+            assert stored.revoked is False
+            assert payload["token_type"] == "refresh"
+
+
+async def test_failed_login_does_not_create_refresh_session(
+    rest_client: httpx.AsyncClient,
+    db_sessionmaker: async_sessionmaker[AsyncSession],
+):
+    registration = await rest_client.post("/api/auth/register", json=CREDENTIALS)
+    assert registration.status_code == 201
+    response = await rest_client.post(
+        "/api/auth/login", json={**CREDENTIALS, "password": "wrong-password"}
+    )
+    assert response.status_code == 401
+    assert rest_client.cookies.get("refresh_token") is None
+    async with db_sessionmaker() as session:
+        assert (await session.scalars(select(RefreshSession))).all() == []
+
+
+@pytest.mark.parametrize(
+    "session_state", ["missing", "revoked", "expired", "wrong_owner"]
+)
+async def test_refresh_rejects_invalid_session(
+    rest_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    db_sessionmaker: async_sessionmaker[AsyncSession],
+    session_state: str,
+):
+    token = rest_client.cookies.get("refresh_token")
+    claims = jwt.decode(
+        token, settings.jwt_secret_key.get_secret_value(), algorithms=["HS256"]
+    )
+    other_user_id = None
+    if session_state == "wrong_owner":
+        registration = await rest_client.post(
+            "/api/auth/register", json={**CREDENTIALS, "username": "bob"}
+        )
+        assert registration.status_code == 201
+        other_user_id = registration.json()["id"]
+
+    async with db_sessionmaker() as session:
+        stored = await session.get(RefreshSession, UUID(claims["jti"]))
+        if session_state == "missing":
+            await session.delete(stored)
+        elif session_state == "revoked":
+            stored.revoked = True
+        elif session_state == "expired":
+            stored.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        else:
+            stored.user_id = other_user_id
+        await session.commit()
+
+    response = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json() == {"detail": "Invalid credentials or expired token"}
+    assert "set-cookie" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "jti", [None, "invalid-uuid", "00000000-0000-0000-0000-000000000000", 123]
+)
+async def test_refresh_requires_registered_session_identifier(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str], jti: str | int | None
+):
+    claims = jwt.decode(
+        rest_client.cookies.get("refresh_token"),
+        settings.jwt_secret_key.get_secret_value(),
+        algorithms=["HS256"],
+    )
+    if jti is None:
+        claims.pop("jti")
+    else:
+        claims["jti"] = jti
+    token = jwt.encode(
+        claims, settings.jwt_secret_key.get_secret_value(), algorithm="HS256"
+    )
+    rest_client.cookies.clear()
+    rest_client.cookies.set("refresh_token", token, path="/api/auth/refresh")
+
+    response = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid credentials or expired token"}
+    assert "set-cookie" not in response.headers
+
+
+async def test_logout_revokes_saved_refresh_token(
+    rest_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    db_sessionmaker: async_sessionmaker[AsyncSession],
+):
+    saved_token = rest_client.cookies.get("refresh_token")
+    claims = jwt.decode(
+        saved_token, settings.jwt_secret_key.get_secret_value(), algorithms=["HS256"]
+    )
+    logout = await rest_client.post(
+        "/api/auth/logout", headers={"Origin": "http://localhost:8000"}
+    )
+    assert logout.status_code == 204
+    async with db_sessionmaker() as session:
+        stored = await session.get(RefreshSession, UUID(claims["jti"]))
+        assert stored.revoked is True
+
+    rest_client.cookies.set("refresh_token", saved_token, path="/api/auth")
+    repeated_logout = await rest_client.post(
+        "/api/auth/logout", headers={"Origin": "http://localhost:8000"}
+    )
+    assert repeated_logout.status_code == 204
+    rest_client.cookies.clear()
+    rest_client.cookies.set("refresh_token", saved_token, path="/api/auth")
+    replay = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert replay.status_code == 401
+    assert "set-cookie" not in replay.headers
+
+
+async def test_logout_preserves_another_session_of_same_user(
+    rest_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+):
+    first_token = rest_client.cookies.get("refresh_token")
+    login = await rest_client.post("/api/auth/login", json=CREDENTIALS)
+    assert login.status_code == 200
+    second_token = rest_client.cookies.get("refresh_token")
+    assert first_token != second_token
+    logout = await rest_client.post(
+        "/api/auth/logout", headers={"Origin": "http://localhost:8000"}
+    )
+    assert logout.status_code == 204
+
+    rest_client.cookies.set("refresh_token", first_token, path="/api/auth")
+    first_session = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert first_session.status_code == 200
+    rest_client.cookies.clear()
+    rest_client.cookies.set("refresh_token", second_token, path="/api/auth")
+    second_session = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert second_session.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "token_case",
+    ["missing", "malformed", "expired", "missing_jti", "unknown_jti", "access"],
+)
+async def test_logout_accepts_missing_or_invalid_refresh_token(
+    rest_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    token_case: str,
+):
+    claims = jwt.decode(
+        rest_client.cookies.get("refresh_token"),
+        settings.jwt_secret_key.get_secret_value(),
+        algorithms=["HS256"],
+    )
+    if token_case == "expired":
+        claims["exp"] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    elif token_case == "missing_jti":
+        claims.pop("jti")
+    elif token_case == "unknown_jti":
+        claims["jti"] = "00000000-0000-0000-0000-000000000000"
+    token = jwt.encode(
+        claims, settings.jwt_secret_key.get_secret_value(), algorithm="HS256"
+    )
+    if token_case == "malformed":
+        token = "not-a-token"
+    elif token_case == "access":
+        token = auth_headers["Authorization"].removeprefix("Bearer ")
+    domain = next(
+        cookie.domain
+        for cookie in rest_client.cookies.jar
+        if cookie.name == "refresh_token"
+    )
+    rest_client.cookies.clear()
+    if token_case != "missing":
+        rest_client.cookies.set("refresh_token", token, domain=domain, path="/api/auth")
+    response = await rest_client.post(
+        "/api/auth/logout", headers={"Origin": "http://localhost:8000"}
+    )
+    assert response.status_code == 204
+    assert not rest_client.cookies
+
+
+async def test_refresh_migrates_legacy_cookie_path(
+    rest_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+):
+    saved_token = rest_client.cookies.get("refresh_token")
+    domain = next(
+        cookie.domain
+        for cookie in rest_client.cookies.jar
+        if cookie.name == "refresh_token"
+    )
+    rest_client.cookies.clear()
+    rest_client.cookies.set(
+        "refresh_token", saved_token, domain=domain, path="/api/auth/refresh"
+    )
+    refreshed = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert refreshed.status_code == 200
+    refresh_cookies = [
+        cookie for cookie in rest_client.cookies.jar if cookie.name == "refresh_token"
+    ]
+    assert len(refresh_cookies) == 1
+    assert refresh_cookies[0].path == "/api/auth"
+    assert refresh_cookies[0].value == saved_token
+    logout = await rest_client.post(
+        "/api/auth/logout", headers={"Origin": "http://localhost:8000"}
+    )
+    assert logout.status_code == 204
+    rest_client.cookies.set("refresh_token", saved_token, path="/api/auth")
+    replay = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert replay.status_code == 401

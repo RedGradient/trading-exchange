@@ -5,13 +5,15 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
 
 import jwt
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.refresh_sessions import RefreshSession
 from app.models.users import User
 from app.schemas.auth import Credentials, TokenResponse, UserResponse
 
@@ -58,12 +60,15 @@ def get_signing_key() -> str:
 
 def decode_token(token: str, token_type: str = "access") -> dict:
     key = get_signing_key()
+    required_claims = ["sub", "exp", "iat"]
+    if token_type == "refresh":
+        required_claims.append("jti")
     try:
         claims = jwt.decode(
             token,
             key,
             algorithms=["HS256"],
-            options={"require": ["sub", "exp", "iat"]},
+            options={"require": required_claims},
         )
         if claims.get("token_type", "access") != token_type:
             raise InvalidCredentialsError()
@@ -77,6 +82,8 @@ def decode_token(token: str, token_type: str = "access") -> dict:
         user_id = int(subject)
         if not 0 < user_id <= 2_147_483_647:
             raise InvalidCredentialsError()
+        if token_type == "refresh":
+            UUID(claims["jti"])
     except (jwt.InvalidTokenError, ValueError) as exc:
         raise InvalidCredentialsError() from exc
 
@@ -87,6 +94,18 @@ async def get_user_from_token(
     token: str, session: AsyncSession, token_type: str = "access"
 ) -> User:
     claims = decode_token(token, token_type)
+    if token_type == "refresh":
+        jti = UUID(claims["jti"])
+        active_session_jti = await session.scalar(
+            select(RefreshSession.jti).where(
+                RefreshSession.jti == jti,
+                RefreshSession.user_id == int(claims["sub"]),
+                RefreshSession.revoked.is_(False),
+                RefreshSession.expires_at > datetime.now(timezone.utc),
+            )
+        )
+        if active_session_jti is None:
+            raise InvalidCredentialsError()
     user = await session.get(User, int(claims["sub"]))
     if user is None:
         raise InvalidCredentialsError()
@@ -111,7 +130,7 @@ async def register_user(
 
 async def login(
     credentials: Credentials, session: AsyncSession, key: str
-) -> TokenResponse:
+) -> tuple[TokenResponse, str]:
     user = await session.scalar(
         select(User).where(User.username == credentials.username)
     )
@@ -122,7 +141,11 @@ async def login(
     )
     if not password_valid or user is None:
         raise InvalidCredentialsError()
-    return create_access_token(user.id, key)
+    access_token = create_access_token(user.id, key)
+    refresh_session = create_refresh_session(user.id, session)
+    refresh_token = create_refresh_token(refresh_session, key)
+    await session.commit()
+    return access_token, refresh_token
 
 
 def create_access_token(user_id: int, key: str) -> TokenResponse:
@@ -136,15 +159,44 @@ def create_access_token(user_id: int, key: str) -> TokenResponse:
     return TokenResponse(access_token=token, expires_in=int(lifetime.total_seconds()))
 
 
-def create_refresh_token(user_id: int, key: str) -> str:
-    now = datetime.now(timezone.utc)
+def create_refresh_session(user_id: int, session: AsyncSession) -> RefreshSession:
+    refresh_session = RefreshSession(
+        jti=uuid4(),
+        user_id=user_id,
+        expires_at=datetime.now(timezone.utc).replace(microsecond=0)
+        + timedelta(days=settings.jwt_refresh_token_days),
+    )
+    session.add(refresh_session)
+    return refresh_session
+
+
+def create_refresh_token(refresh_session: RefreshSession, key: str) -> str:
     return jwt.encode(
         {
-            "sub": str(user_id),
-            "iat": now,
-            "exp": now + timedelta(days=settings.jwt_refresh_token_days),
+            "sub": str(refresh_session.user_id),
+            "jti": str(refresh_session.jti),
+            "iat": datetime.now(timezone.utc),
+            "exp": refresh_session.expires_at,
             "token_type": "refresh",
         },
         key,
         algorithm="HS256",
     )
+
+
+async def revoke_refresh_session(token: str, session: AsyncSession) -> None:
+    """Revoke the session identified by a valid refresh token, if it exists."""
+    try:
+        claims = decode_token(token, token_type="refresh")
+    except (InvalidCredentialsError, AuthConfigurationError):
+        return
+    await session.execute(
+        update(RefreshSession)
+        .where(
+            RefreshSession.jti == UUID(claims["jti"]),
+            RefreshSession.user_id == int(claims["sub"]),
+            RefreshSession.revoked.is_(False),
+        )
+        .values(revoked=True)
+    )
+    await session.commit()
