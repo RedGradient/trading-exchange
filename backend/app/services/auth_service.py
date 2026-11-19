@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import jwt
 from sqlalchemy import select
@@ -60,12 +60,15 @@ def get_signing_key() -> str:
 
 def decode_token(token: str, token_type: str = "access") -> dict:
     key = get_signing_key()
+    required_claims = ["sub", "exp", "iat"]
+    if token_type == "refresh":
+        required_claims.append("jti")
     try:
         claims = jwt.decode(
             token,
             key,
             algorithms=["HS256"],
-            options={"require": ["sub", "exp", "iat"]},
+            options={"require": required_claims},
         )
         if claims.get("token_type", "access") != token_type:
             raise InvalidCredentialsError()
@@ -89,6 +92,21 @@ async def get_user_from_token(
     token: str, session: AsyncSession, token_type: str = "access"
 ) -> User:
     claims = decode_token(token, token_type)
+    if token_type == "refresh":
+        try:
+            jti = UUID(claims["jti"])
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise InvalidCredentialsError() from exc
+        active_session_jti = await session.scalar(
+            select(RefreshSession.jti).where(
+                RefreshSession.jti == jti,
+                RefreshSession.user_id == int(claims["sub"]),
+                RefreshSession.revoked.is_(False),
+                RefreshSession.expires_at > datetime.now(timezone.utc),
+            )
+        )
+        if active_session_jti is None:
+            raise InvalidCredentialsError()
     user = await session.get(User, int(claims["sub"]))
     if user is None:
         raise InvalidCredentialsError()

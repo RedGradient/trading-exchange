@@ -427,3 +427,76 @@ async def test_failed_login_does_not_create_refresh_session(
     assert rest_client.cookies.get("refresh_token") is None
     async with db_sessionmaker() as session:
         assert (await session.scalars(select(RefreshSession))).all() == []
+
+
+@pytest.mark.parametrize(
+    "session_state", ["missing", "revoked", "expired", "wrong_owner"]
+)
+async def test_refresh_rejects_invalid_session(
+    rest_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    db_sessionmaker: async_sessionmaker[AsyncSession],
+    session_state: str,
+):
+    token = rest_client.cookies.get("refresh_token")
+    claims = jwt.decode(
+        token, settings.jwt_secret_key.get_secret_value(), algorithms=["HS256"]
+    )
+    other_user_id = None
+    if session_state == "wrong_owner":
+        registration = await rest_client.post(
+            "/api/auth/register", json={**CREDENTIALS, "username": "bob"}
+        )
+        assert registration.status_code == 201
+        other_user_id = registration.json()["id"]
+
+    async with db_sessionmaker() as session:
+        stored = await session.get(RefreshSession, UUID(claims["jti"]))
+        if session_state == "missing":
+            await session.delete(stored)
+        elif session_state == "revoked":
+            stored.revoked = True
+        elif session_state == "expired":
+            stored.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        else:
+            stored.user_id = other_user_id
+        await session.commit()
+
+    response = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json() == {"detail": "Invalid credentials or expired token"}
+    assert "set-cookie" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "jti", [None, "invalid-uuid", "00000000-0000-0000-0000-000000000000", 123]
+)
+async def test_refresh_requires_registered_session_identifier(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str], jti: str | int | None
+):
+    claims = jwt.decode(
+        rest_client.cookies.get("refresh_token"),
+        settings.jwt_secret_key.get_secret_value(),
+        algorithms=["HS256"],
+    )
+    if jti is None:
+        claims.pop("jti")
+    else:
+        claims["jti"] = jti
+    token = jwt.encode(
+        claims, settings.jwt_secret_key.get_secret_value(), algorithm="HS256"
+    )
+    rest_client.cookies.clear()
+    rest_client.cookies.set("refresh_token", token, path="/api/auth/refresh")
+
+    response = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid credentials or expired token"}
+    assert "set-cookie" not in response.headers
