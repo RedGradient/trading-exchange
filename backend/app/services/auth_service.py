@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import jwt
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,6 +82,8 @@ def decode_token(token: str, token_type: str = "access") -> dict:
         user_id = int(subject)
         if not 0 < user_id <= 2_147_483_647:
             raise InvalidCredentialsError()
+        if token_type == "refresh":
+            UUID(claims["jti"])
     except (jwt.InvalidTokenError, ValueError) as exc:
         raise InvalidCredentialsError() from exc
 
@@ -93,10 +95,7 @@ async def get_user_from_token(
 ) -> User:
     claims = decode_token(token, token_type)
     if token_type == "refresh":
-        try:
-            jti = UUID(claims["jti"])
-        except (ValueError, TypeError, AttributeError) as exc:
-            raise InvalidCredentialsError() from exc
+        jti = UUID(claims["jti"])
         active_session_jti = await session.scalar(
             select(RefreshSession.jti).where(
                 RefreshSession.jti == jti,
@@ -183,3 +182,21 @@ def create_refresh_token(refresh_session: RefreshSession, key: str) -> str:
         key,
         algorithm="HS256",
     )
+
+
+async def revoke_refresh_session(token: str, session: AsyncSession) -> None:
+    """Revoke the session identified by a valid refresh token, if it exists."""
+    try:
+        claims = decode_token(token, token_type="refresh")
+    except (InvalidCredentialsError, AuthConfigurationError):
+        return
+    await session.execute(
+        update(RefreshSession)
+        .where(
+            RefreshSession.jti == UUID(claims["jti"]),
+            RefreshSession.user_id == int(claims["sub"]),
+            RefreshSession.revoked.is_(False),
+        )
+        .values(revoked=True)
+    )
+    await session.commit()
