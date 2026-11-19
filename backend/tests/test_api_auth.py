@@ -342,3 +342,38 @@ async def test_order_book_is_public(rest_client: httpx.AsyncClient):
     response = await rest_client.get("/api/order_book/BTC-USD")
     assert response.status_code == 200
     assert response.json() == {"symbol": "BTC-USD", "asks": [], "bids": []}
+
+
+async def test_logout_clears_session_cookies(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str]
+):
+    assert rest_client.cookies.get("access_token")
+    assert rest_client.cookies.get("refresh_token")
+
+    response = await rest_client.post(
+        "/api/auth/logout", headers={"Origin": "http://localhost:8000"}
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert rest_client.cookies.get("access_token") is None
+    assert rest_client.cookies.get("refresh_token") is None
+    refresh = await rest_client.post(
+        "/api/auth/refresh", headers={"Origin": "http://localhost:8000"}
+    )
+    assert refresh.status_code == 401
+    repeated = await rest_client.post(
+        "/api/auth/logout", headers={"Origin": "http://localhost:8000"}
+    )
+    assert repeated.status_code == 204
+
+
+@pytest.mark.parametrize("origin", [None, "http://evil.example"])
+async def test_logout_rejects_untrusted_origin(
+    rest_client: httpx.AsyncClient, auth_headers: dict[str, str], origin: str | None
+):
+    headers = {"Origin": origin} if origin is not None else {}
+    response = await rest_client.post("/api/auth/logout", headers=headers)
+
+    assert response.status_code == 403
+    assert rest_client.cookies.get("refresh_token")

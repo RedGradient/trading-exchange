@@ -93,3 +93,23 @@ async def refresh(
     token = auth_service.create_access_token(user.id, key)
     set_access_cookie(response, token)
     return token
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(request: Request, response: Response) -> None:
+    if request.headers.get("origin") not in settings.ws_allowed_origins:
+        raise HTTPException(status_code=403, detail="Origin is not allowed")
+    response.delete_cookie(
+        "access_token",
+        path="/ws",
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        "refresh_token",
+        path="/api/auth/refresh",
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite="strict",
+    )
