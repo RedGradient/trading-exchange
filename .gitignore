@@ -32,3 +32,6 @@ volume/
 # Node / frontend
 node_modules/
 dist/
+
+# Rust
+/rust/matching-engine/target/
