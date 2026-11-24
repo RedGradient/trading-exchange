@@ -1,5 +1,4 @@
-from app.engine.matching_engine import MatchingEngine
-from app.engine.order_book import OrderBook
+from app.engine.rust_engine import MatchingEngine
 
 
 class EngineRegistry:
@@ -8,5 +7,5 @@ class EngineRegistry:
 
     def get_engine(self, symbol: str) -> MatchingEngine:
         if symbol not in self._registry:
-            self._registry[symbol] = MatchingEngine(symbol, OrderBook())
+            self._registry[symbol] = MatchingEngine(symbol)
         return self._registry[symbol]

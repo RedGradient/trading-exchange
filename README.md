@@ -15,7 +15,7 @@ A trading platform built for learning purposes, with a FastAPI backend and React
 
 ## Stack
 
-- **Backend** — Python, FastAPI, asyncio, SQLAlchemy, PostgreSQL, Alembic, PyJWT.
+- **Backend** — Python, Rust (PyO3), FastAPI, asyncio, SQLAlchemy, PostgreSQL, Alembic, PyJWT.
 - **Frontend** — React, TypeScript, Vite.
 - **Infrastructure** — Docker Compose, Terraform, LocalStack, AWS SQS and SNS.
 
@@ -67,6 +67,28 @@ expire after seven days.
 
 Configure `WS_ALLOWED_ORIGINS` for origins other than `http://localhost:8000` and
 `http://localhost:5173`. Set `AUTH_COOKIE_SECURE=true` when serving over HTTPS.
+
+## Backend development
+
+The application uses the Rust matching engine through PyO3. Docker builds and
+installs the native module automatically. For local development, install Rust
+and build the module in your Python environment from the project root:
+
+```bash
+make engine
+```
+
+Run this command again after changing the Rust code. `uv sync` also installs the
+native module as a local dependency. The original Python engine is retained for
+comparison and benchmarks.
+
+Run benchmarks from `backend` (requires `pytest-benchmark`):
+
+```bash
+python -m pytest benchmarks/ --benchmark-only                 # Rust
+python -m pytest benchmarks/ --benchmark-only --engine=python # Python
+python -m pytest benchmarks/ --benchmark-only --engine=all    # Both
+```
 
 ## Frontend development
 

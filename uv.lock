@@ -79,6 +79,11 @@ wheels = [
 ]
 
 [[package]]
+name = "matching-engine-rust"
+version = "0.1.0"
+source = { directory = "rust/matching-engine" }
+
+[[package]]
 name = "opentelemetry-api"
 version = "1.45.2"
 source = { registry = "https://pypi.org/simple" }
@@ -330,6 +335,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "matching-engine-rust" },
     { name = "pydantic" },
     { name = "pyjwt" },
     { name = "pytest-benchmark" },
@@ -340,6 +346,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.162.5" },
+    { name = "matching-engine-rust", directory = "rust/matching-engine" },
     { name = "pydantic", specifier = ">=2.14.3" },
     { name = "pyjwt", specifier = "==2.10.1" },
     { name = "pytest-benchmark", specifier = ">=5.3.1" },
