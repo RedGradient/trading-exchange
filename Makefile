@@ -1,4 +1,4 @@
-.PHONY: help up down logs ps build engine test lint fmt clean
+.PHONY: help up down logs ps build engine test benchmark-python benchmark-rust lint fmt clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -25,6 +25,12 @@ engine: ## Build and install the Rust engine in the local Python environment
 
 test: ## Run the backend test suite (locally)
 	cd backend && python -m pytest
+
+benchmark-python: ## Run matching engine benchmarks with Python
+	cd backend && python -m pytest benchmarks/ --benchmark-only --engine=python
+
+benchmark-rust: ## Run matching engine benchmarks with Rust
+	cd backend && python -m pytest benchmarks/ --benchmark-only --engine=rust
 
 lint: ## Run ruff checks
 	cd backend && ruff check .

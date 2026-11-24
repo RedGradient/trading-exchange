@@ -82,6 +82,14 @@ Run this command again after changing the Rust code. `uv sync` also installs the
 native module as a local dependency. The original Python engine is retained for
 comparison and benchmarks.
 
+Run benchmarks from `backend` (requires `pytest-benchmark`):
+
+```bash
+python -m pytest benchmarks/ --benchmark-only                 # Rust
+python -m pytest benchmarks/ --benchmark-only --engine=python # Python
+python -m pytest benchmarks/ --benchmark-only --engine=all    # Both
+```
+
 ## Frontend development
 
 With the backend running, start Vite separately for live reload.
