@@ -20,6 +20,10 @@ pub(crate) struct OrderBook {
 }
 
 impl OrderBook {
+    pub(crate) fn get(&self, id: u64) -> Option<&Order> {
+        self.orders.get(&id)
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.orders.len()
     }

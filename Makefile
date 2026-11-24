@@ -1,4 +1,4 @@
-.PHONY: help up down logs ps build test lint fmt clean
+.PHONY: help up down logs ps build engine test lint fmt clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -19,6 +19,9 @@ ps: ## Show running containers
 
 build: ## Rebuild images
 	docker compose build
+
+engine: ## Build and install the Rust engine in the local Python environment
+	uv pip install ./rust/matching-engine
 
 test: ## Run the backend test suite (locally)
 	cd backend && python -m pytest

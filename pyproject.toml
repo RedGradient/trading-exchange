@@ -3,6 +3,7 @@ name = "trading-exchange"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
+    "matching-engine-rust",
     "pyjwt==2.10.1",
     "fastapi>=0.162.5",
     "pydantic>=2.14.3",
@@ -10,3 +11,6 @@ dependencies = [
     "sqlalchemy>=2.1.8",
     "pytest-benchmark>=5.3.1",
 ]
+
+[tool.uv.sources]
+matching-engine-rust = { path = "rust/matching-engine" }

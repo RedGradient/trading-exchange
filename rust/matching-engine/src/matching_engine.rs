@@ -112,6 +112,14 @@ impl MatchingEngine {
         self.order_book.snapshot(depth)
     }
 
+    pub(crate) fn get_order(&self, id: u64) -> Option<&Order> {
+        self.order_book.get(id)
+    }
+
+    pub(crate) fn best_order(&self, side: Side) -> Option<&Order> {
+        self.order_book.best(side)
+    }
+
     fn validate(&self, order: &Order) -> Result<(), MatchingError> {
         if order.symbol != self.symbol {
             return Err(MatchingError::SymbolMismatch);

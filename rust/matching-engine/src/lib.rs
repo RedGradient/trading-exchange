@@ -3,6 +3,7 @@
 mod matching_engine;
 mod models;
 mod order_book;
+mod python;
 
 pub use matching_engine::{MatchingEngine, MatchingError};
 pub use models::{Order, OrderStatus, OrderType, Side, Trade};
